@@ -338,10 +338,6 @@ proxy_ready_cb (GObject *source_object,
 		g_cancellable_reset (priv->cancellable);
 		g_signal_connect (priv->proxy, "g-signal",
 		                  G_CALLBACK (modem_signal_cb), modem);
-
-		/* Explicitly set default timeout for method calls to 30 seconds */
-		g_dbus_proxy_set_default_timeout (priv->proxy, 30000);
-
 		g_dbus_proxy_call (priv->proxy,
 		                   "GetProperties",
 		                   NULL,
