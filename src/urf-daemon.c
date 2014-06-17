@@ -386,6 +386,8 @@ urf_daemon_flight_mode (UrfDaemon             *daemon,
 			g_warning ("Failed to emit UrfkeyPressed: %s", error->message);
 			g_error_free (error);
 		}
+	} else {
+		g_warning ("Failed to set device flight mode to %s", block ? "blocked" : "unblocked");
 	}
 
 	g_dbus_method_invocation_return_value (invocation,
