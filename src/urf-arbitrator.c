@@ -188,6 +188,8 @@ urf_arbitrator_set_flight_mode (UrfArbitrator  *arbitrator,
 				 want_state ? "TRUE" : "FALSE");
 
 			ret = urf_arbitrator_set_block (arbitrator, i, want_state);
+		} else {
+			urf_config_set_persist_state(priv->config, i, block);
 		}
 
 		if (!ret)
