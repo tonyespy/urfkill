@@ -165,8 +165,6 @@ urf_arbitrator_set_flight_mode (UrfArbitrator  *arbitrator,
 
 	g_message("set_flight_mode: %d:", (int) block);
 
-        urf_config_set_persist_state (priv->config, RFKILL_TYPE_ALL, block);
-
 	for (i = RFKILL_TYPE_ALL + 1; i < NUM_RFKILL_TYPES; i++) {
 		state = urf_killswitch_get_state (priv->killswitch[i]);
 
@@ -191,6 +189,9 @@ urf_arbitrator_set_flight_mode (UrfArbitrator  *arbitrator,
 
 			ret = urf_arbitrator_set_block (arbitrator, i, want_state);
 		}
+
+		if (!ret)
+			break;
 	}
 
 	return ret;
@@ -645,14 +646,6 @@ urf_arbitrator_dispose (GObject *object)
 	UrfArbitratorPrivate *priv = URF_ARBITRATOR_GET_PRIVATE (object);
 	KillswitchState state;
 	int i;
-
-	if (priv->persist) {
-		for (i = RFKILL_TYPE_ALL + 1; i < NUM_RFKILL_TYPES; i++) {
-			state = urf_killswitch_get_state (priv->killswitch[i]);
-                        g_debug("dispose arbitrator: state for %d is %d", i, state);
-			urf_config_set_persist_state (priv->config, i, state);
-		}
-	}
 
 	for (i = 0; i < NUM_RFKILL_TYPES; i++) {
 		if (priv->killswitch[i]) {
