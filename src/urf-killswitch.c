@@ -90,6 +90,7 @@ emit_properites_changed (UrfKillswitch *killswitch)
 	                       "state",
 	                       g_variant_new_int32 (priv->state));
 
+	g_debug("Emitting PropertiesChanged on killswitch %s", priv->object_path);
 	g_dbus_connection_emit_signal (priv->connection,
 	                               NULL,
 	                               priv->object_path,
@@ -155,6 +156,7 @@ urf_killswitch_state_refresh (UrfKillswitch *killswitch)
 	if (priv->state != new_state) {
 		priv->state = new_state;
 		emit_properites_changed (killswitch);
+		g_debug("Emitting StateChanged on killswitch %s", priv->object_path);
 		g_dbus_connection_emit_signal (priv->connection,
 		                               NULL,
 		                               priv->object_path,
