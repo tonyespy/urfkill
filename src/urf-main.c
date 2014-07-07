@@ -176,10 +176,12 @@ main (gint argc, gchar **argv)
 	if (debug)
 		log_level |= G_LOG_LEVEL_DEBUG;
 
-	g_log_set_handler (G_LOG_DOMAIN,
-	                   log_level | G_LOG_FLAG_FATAL | G_LOG_FLAG_RECURSION,
-	                   (GLogFunc) urf_log_handler,
-	                   NULL);
+	if (getenv("URFKILL_NO_SYSLOG") == 0) {
+		g_log_set_handler (G_LOG_DOMAIN,
+				   log_level | G_LOG_FLAG_FATAL | G_LOG_FLAG_RECURSION,
+				   (GLogFunc) urf_log_handler,
+				   NULL);
+	}
 
 	if (conf_file == NULL)
 		conf_file = URFKILL_CONFIG_FILE;
