@@ -50,13 +50,6 @@ enum
 	PROP_LAST
 };
 
-enum {
-	SIGNAL_CHANGED,
-	LAST_SIGNAL
-};
-
-static int signals[LAST_SIGNAL] = { 0 };
-
 #define URF_DEVICE_OFONO_GET_PRIVATE(obj) (G_TYPE_INSTANCE_GET_PRIVATE((obj), \
                                            URF_TYPE_DEVICE_OFONO, UrfDeviceOfonoPrivate))
 
@@ -269,6 +262,10 @@ modem_signal_cb (GDBusProxy *proxy,
 			                      g_strdup (prop_name),
 			                      g_variant_ref (prop_value));
 
+		if (g_strcmp0 ("Online", prop_name) == 0) {
+			g_signal_emit_by_name(G_OBJECT (modem), "state-changed", 0);
+		}
+
 		if (g_strcmp0 ("Powered", prop_name) == 0) {
 			gboolean powered = FALSE;
 
@@ -317,6 +314,8 @@ get_properties_cb (GObject *source_object,
 
 		g_variant_unref (properties);
 		g_variant_unref (result);
+
+		g_signal_emit_by_name(G_OBJECT (modem), "state-changed", 0);
 	} else {
 		g_warning ("Error getting properties: %s",
 		           error ? error->message : "(unknown error)");
@@ -448,14 +447,6 @@ urf_device_ofono_class_init(UrfDeviceOfonoClass *class)
 	parent_class->get_device_type = get_rf_type;
 	parent_class->is_software_blocked = get_soft;
 	parent_class->set_software_blocked = set_soft;
-
-	signals[SIGNAL_CHANGED] =
-		g_signal_new ("changed",
-			      G_OBJECT_CLASS_TYPE (class),
-			      G_SIGNAL_RUN_LAST | G_SIGNAL_DETAILED,
-			      0, NULL, NULL,
-			      g_cclosure_marshal_VOID__VOID,
-			      G_TYPE_NONE, 0, G_TYPE_NONE);
 
 	pspec = g_param_spec_boolean ("soft",
 				      "Soft Block",

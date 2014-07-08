@@ -59,13 +59,6 @@ enum
 	PROP_LAST
 };
 
-enum {
-	SIGNAL_CHANGED,
-	LAST_SIGNAL
-};
-
-static int signals[LAST_SIGNAL] = { 0 };
-
 #define URF_DEVICE_KERNEL_GET_PRIVATE(obj) (G_TYPE_INSTANCE_GET_PRIVATE((obj), \
                                 URF_TYPE_DEVICE_KERNEL, UrfDeviceKernelPrivate))
 
@@ -139,7 +132,8 @@ urf_device_kernel_update_states (UrfDevice *device,
 		priv->soft = soft;
 		priv->hard = hard;
 
-		g_signal_emit (G_OBJECT (device), signals[SIGNAL_CHANGED], 0);
+		g_debug("Emitting state-changed on device %s", priv->name);
+		g_signal_emit_by_name(G_OBJECT (device), "state-changed", 0);
 		emit_properites_changed (URF_DEVICE_KERNEL (device));
 		g_dbus_connection_emit_signal (priv->connection,
 		                               NULL,
@@ -240,8 +234,6 @@ set_soft (UrfDevice *device, gboolean blocked)
 			   g_strerror (errno));
 		return FALSE;
 	}
-
-	priv->soft = blocked;
 
 	return TRUE;
 }
@@ -414,14 +406,6 @@ urf_device_kernel_class_init(UrfDeviceKernelClass *class)
 	parent_class->set_software_blocked = set_soft;
 	parent_class->is_platform = is_platform;
 	parent_class->update_states = urf_device_kernel_update_states;
-
-	signals[SIGNAL_CHANGED] =
-		g_signal_new ("changed",
-			      G_OBJECT_CLASS_TYPE (class),
-			      G_SIGNAL_RUN_LAST | G_SIGNAL_DETAILED,
-			      0, NULL, NULL,
-			      g_cclosure_marshal_VOID__VOID,
-			      G_TYPE_NONE, 0, G_TYPE_NONE);
 
 	pspec = g_param_spec_boolean ("soft",
 				      "Killswitch Soft Block",
