@@ -607,7 +607,6 @@ urf_daemon_startup (UrfDaemon *daemon)
 		ret = urf_input_startup (priv->input);
 		if (!ret) {
 			g_warning ("failed to setup input device monitor");
-			goto out;
 		}
 
 		/* start up session checker */
