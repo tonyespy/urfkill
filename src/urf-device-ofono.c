@@ -199,7 +199,7 @@ set_online_cb (GObject *source_object,
  * set_soft:
  **/
 static gboolean
-set_soft (UrfDevice *device, gboolean blocked)
+ofono_set_soft (UrfDevice *device, gboolean blocked)
 {
 	UrfDeviceOfono *modem = URF_DEVICE_OFONO (device);
 	UrfDeviceOfonoPrivate *priv = URF_DEVICE_OFONO_GET_PRIVATE (modem);
@@ -272,7 +272,7 @@ modem_signal_cb (GDBusProxy *proxy,
 			powered = g_variant_get_boolean (prop_value);
 
 			if (powered)
-				set_soft (URF_DEVICE (modem), priv->soft);
+				ofono_set_soft (URF_DEVICE (modem), priv->soft);
 		}
 
 		g_free (prop_name);
@@ -303,7 +303,7 @@ get_properties_cb (GObject *source_object,
 		while (g_variant_iter_next (&iter, "{sv}", &key, &variant)) {
 			if (g_strcmp0 ("Powered", key) == 0 &&
 			    g_variant_get_boolean (variant) == TRUE) {
-				set_soft (URF_DEVICE (modem), priv->soft);
+				ofono_set_soft (URF_DEVICE (modem), priv->soft);
 			}
 
 			g_hash_table_insert (priv->properties, g_strdup (key),
@@ -446,7 +446,7 @@ urf_device_ofono_class_init(UrfDeviceOfonoClass *class)
 	parent_class->get_urf_type = get_urf_type;
 	parent_class->get_device_type = get_rf_type;
 	parent_class->is_software_blocked = get_soft;
-	parent_class->set_software_blocked = set_soft;
+	parent_class->set_software_blocked = ofono_set_soft;
 
 	pspec = g_param_spec_boolean ("soft",
 				      "Soft Block",

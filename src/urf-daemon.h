@@ -73,7 +73,7 @@ gboolean	 urf_daemon_enumerate_devices	(UrfDaemon		*daemon,
 						 GDBusMethodInvocation  *invocation);
 gboolean	 urf_daemon_is_flight_mode	(UrfDaemon		*daemon,
 						 GDBusMethodInvocation  *invocation);
-gboolean	 urf_daemon_flight_mode	        (UrfDaemon		*daemon,
+void     	 urf_daemon_flight_mode	        (UrfDaemon		*daemon,
 						 const gboolean		 block,
 						 GDBusMethodInvocation  *invocation);
 gboolean	 urf_daemon_is_inhibited	(UrfDaemon		*daemon,

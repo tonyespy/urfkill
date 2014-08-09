@@ -207,7 +207,7 @@ on_ofono_appeared (GDBusConnection *connection,
 {
 	UrfOfonoManager *ofono = user_data;
 
-	g_debug("oFono appeared on the bus");
+	g_message("oFono appeared on the bus");  // AWE
 
 	g_cancellable_reset (ofono->cancellable);
 	g_dbus_proxy_new (connection,

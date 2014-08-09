@@ -212,7 +212,7 @@ get_hard (UrfDevice *device)
  * set_soft:
  **/
 static gboolean
-set_soft (UrfDevice *device, gboolean blocked)
+kernel_set_soft (UrfDevice *device, gboolean blocked)
 {
 	UrfDeviceKernel *self = URF_DEVICE_KERNEL (device);
 	UrfDeviceKernelPrivate *priv = URF_DEVICE_KERNEL_GET_PRIVATE (self);
@@ -224,7 +224,9 @@ set_soft (UrfDevice *device, gboolean blocked)
 	event.type = priv->type;
 	event.soft = blocked;
 
-	g_message ("Setting %s to %s",
+	// AWE: this probably should be g_debug ( redundant )
+	g_message ("%s: Setting %s to %s",
+		   __func__,
 	           type_to_string (priv->type),
 	           blocked ? "blocked" : "unblocked");
 
@@ -403,7 +405,7 @@ urf_device_kernel_class_init(UrfDeviceKernelClass *class)
 	parent_class->is_hardware_blocked = get_hard;
 	parent_class->set_hardware_blocked = set_hard;
 	parent_class->is_software_blocked = get_soft;
-	parent_class->set_software_blocked = set_soft;
+	parent_class->set_software_blocked = kernel_set_soft;
 	parent_class->is_platform = is_platform;
 	parent_class->update_states = urf_device_kernel_update_states;
 

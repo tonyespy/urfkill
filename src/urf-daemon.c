@@ -1,6 +1,7 @@
 /* -*- Mode: C; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*-
  *
  * Copyright (C) 2010 Gary Ching-Pang Lin <glin@suse.com>
+ * Copyright (C) 2014 Canonical Ltd.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -137,9 +138,11 @@ struct UrfDaemonPrivate
 	UrfOfonoManager		*ofono_manager;
 	gboolean		 key_control;
 	gboolean		 flight_mode;
+	gboolean		 pending_block;  // only needed for fake cb version...
 	gboolean		 master_key;
 	GDBusConnection		*connection;
 	GDBusNodeInfo		*introspection_data;
+        GDBusMethodInvocation   *invocation;
 };
 
 static void urf_daemon_dispose (GObject *object);
@@ -163,6 +166,8 @@ urf_daemon_input_event_cb (UrfInput *input,
 	gint type;
 	gboolean block = FALSE;
 	GError *error = NULL;
+
+	g_message ("%s", __func__);
 
 	if (urf_session_checker_is_inhibited (priv->session_checker))
 		goto out;
@@ -205,7 +210,9 @@ urf_daemon_input_event_cb (UrfInput *input,
 	if (priv->master_key)
 		type = RFKILL_TYPE_ALL;
 
-	urf_arbitrator_set_block (arbitrator, type, block);
+
+	// AWE/FIXME
+	urf_arbitrator_set_block (arbitrator, type, block, NULL);
 out:
 	g_signal_emit (daemon, signals[SIGNAL_URFKEY_PRESSED], 0, code);
 	g_dbus_connection_emit_signal (priv->connection,
@@ -234,6 +241,8 @@ urf_daemon_block (UrfDaemon             *daemon,
 	PolkitSubject *subject = NULL;
 	gboolean ret = FALSE;
 
+	g_message ("%s", __func__);
+
 	g_return_val_if_fail (type >= 0, FALSE);
 
 	if (!urf_arbitrator_has_devices (priv->arbitrator))
@@ -246,7 +255,8 @@ urf_daemon_block (UrfDaemon             *daemon,
 	if (!urf_polkit_check_auth (priv->polkit, subject, "org.freedesktop.urfkill.block", invocation))
 		goto out;
 
-	ret = urf_arbitrator_set_block (priv->arbitrator, type, block);
+	// AWE/FIXME - this method needs to be asynchronous too!!!
+	urf_arbitrator_set_block (priv->arbitrator, type, block, NULL);
 
 	g_dbus_method_invocation_return_value (invocation,
 	                                       g_variant_new ("(b)", ret));
@@ -254,7 +264,7 @@ out:
 	if (subject != NULL)
 		g_object_unref (subject);
 
-	return ret;
+	return TRUE;
 }
 
 /**
@@ -336,6 +346,9 @@ urf_daemon_is_flight_mode (UrfDaemon             *daemon,
 	UrfDaemonPrivate *priv = daemon->priv;
 	GVariant *value;
 
+	// AWE: if urfkilld starts and enables flight-mode from saved-state,
+	// then I'm pretty sure that daemon->flight_mode isn't set...
+
 	value = g_variant_new ("(b)", priv->flight_mode);
 	g_dbus_method_invocation_return_value (invocation, value);
 
@@ -343,34 +356,51 @@ urf_daemon_is_flight_mode (UrfDaemon             *daemon,
 }
 
 /**
- * urf_daemon_flight_mode:
+ * urf_daemon_flight_mode_cb:
  **/
-gboolean
-urf_daemon_flight_mode (UrfDaemon             *daemon,
-			const gboolean         block,
-			GDBusMethodInvocation *invocation)
+void
+urf_daemon_flight_mode_cb (GObject *source,
+			   GAsyncResult *res,
+			   gpointer user_data)
 {
-	UrfDaemonPrivate *priv = daemon->priv;
-	PolkitSubject *subject = NULL;
-	gboolean ret = FALSE;
-	GError *error = NULL;
+	UrfDaemon        *daemon;
+	UrfDaemonPrivate *priv;
+	gboolean          result = FALSE;
+	GError            *error = NULL;
 
-	if (!urf_arbitrator_has_devices (priv->arbitrator))
-		goto out;
+	g_assert (URF_IS_DAEMON (source));
+	daemon = URF_DAEMON(source);
 
-	subject = urf_polkit_get_subject (priv->polkit, invocation);
-	if (subject == NULL)
-		goto out;
+	g_assert (g_task_is_valid(res, source));
 
-	if (!urf_polkit_check_auth (priv->polkit, subject, "org.freedesktop.urfkill.flight_mode", invocation))
-		goto out;
+	g_message ("%s", __func__);  // AWE
 
-	ret = urf_arbitrator_set_flight_mode (priv->arbitrator, block);
+	priv = daemon->priv;
 
-	if (ret == TRUE) {
-		priv->flight_mode = block;
+	// does any of this occur if flight-mode is auto-enabled at startup due to
+	// persistent state???
+
+	if (res) {
+		g_message ("%s: res is non-NULL", __func__);  // AWE
+
+		// AWE: pointer is always NULL on success...
+		g_task_propagate_pointer(G_TASK (res), &error);
+
+		// AWE: no error returned means success...
+		if (error == NULL) {
+			g_message ("%s *error == NULL (Success)", __func__);  // AWE
+			result = TRUE;
+		} else {
+			g_message ("%s *error != NULL (Failed)", __func__);  // AWE
+			g_error_free (error);
+			error = NULL;
+		}
+	}
+
+	if (result == TRUE) {
+		priv->flight_mode = priv->pending_block;
 		urf_config_set_persist_state (priv->config, RFKILL_TYPE_ALL,
-		                              block
+		                              priv->pending_block
 		                              ? KILLSWITCH_STATE_SOFT_BLOCKED
 		                              : KILLSWITCH_STATE_UNBLOCKED);
 
@@ -383,20 +413,60 @@ urf_daemon_flight_mode (UrfDaemon             *daemon,
 		                               g_variant_new ("(b)", priv->flight_mode),
 		                               &error);
 		if (error) {
-			g_warning ("Failed to emit UrfkeyPressed: %s", error->message);
+			g_warning ("Failed to emit FlightModeChanged: %s", error->message);
 			g_error_free (error);
 		}
 	} else {
-		g_warning ("Failed to set device flight mode to %s", block ? "blocked" : "unblocked");
+		g_warning ("Failed to set device flight mode to %s", priv->pending_block ? "blocked" : "unblocked");
 	}
 
-	g_dbus_method_invocation_return_value (invocation,
-	                                       g_variant_new ("(b)", ret));
+	g_dbus_method_invocation_return_value (priv->invocation,
+	                                       g_variant_new ("(b)", result));
+
+	priv->invocation = NULL;
+}
+
+/**
+ * urf_daemon_flight_mode:
+ **/
+void
+urf_daemon_flight_mode (UrfDaemon             *daemon,
+			const gboolean         block,
+			GDBusMethodInvocation *invocation)
+{
+	UrfDaemonPrivate *priv = daemon->priv;
+	PolkitSubject *subject = NULL;
+	GTask *task;
+
+	g_message ("%s: block: '%u'", __func__, block);  // AWE
+
+	if (!urf_arbitrator_has_devices (priv->arbitrator))
+		goto out;
+
+	subject = urf_polkit_get_subject (priv->polkit, invocation);
+	if (subject == NULL)
+		goto out;
+
+	if (!urf_polkit_check_auth (priv->polkit, subject, "org.freedesktop.urfkill.flight_mode", invocation))
+		goto out;
+
+	priv->pending_block = block;
+
+	// AWE/FIXME: need better name...
+	priv->invocation = invocation;
+
+	// FIXME: how is task cleaned up???
+	task = g_task_new(daemon, NULL, urf_daemon_flight_mode_cb, NULL);
+
+	// AWE: can g_task_new return NULL???  assume not
+	g_assert (task != NULL);
+
+	urf_arbitrator_set_flight_mode (priv->arbitrator, block, task);
+
 out:
 	if (subject != NULL)
 		g_object_unref (subject);
 
-	return ret;
 }
 
 /**
@@ -452,6 +522,16 @@ handle_method_call_main (UrfDaemon             *daemon,
                          GVariant              *parameters,
                          GDBusMethodInvocation *invocation)
 {
+
+	/*
+	 * FIXME: there's no concept of pending operations, if
+	 * someone calls flight-mode, and then immediately calls
+	 * block, this could cause problems.  This wasn't an issue
+	 * when the code was syncrhonous, but as soon as we added
+	 * async handling it becomes a problem...
+	 */
+
+
 	if (g_strcmp0 (method_name, "Block") == 0) {
 		gint type;
 		gboolean block;

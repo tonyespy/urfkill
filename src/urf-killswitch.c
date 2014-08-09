@@ -150,7 +150,10 @@ urf_killswitch_state_refresh (UrfKillswitch *killswitch)
 	if (platform_checked)
 		new_state = aggregate_states (platform, new_state);
 
-	g_message("killswitch state: %s new_state: %s",
+	// AWE: make this debug & addd info so that you can tell
+	// what kind of killswitch this is!  Also message is really long!
+
+	g_message("%s: killswitch state: %s new_state: %s", __func__,
 		  state_to_string(priv->state), state_to_string(new_state));
 	/* emit a signal for change */
 	if (priv->state != new_state) {
@@ -253,7 +256,8 @@ urf_killswitch_set_software_blocked (UrfKillswitch *killswitch,
 	gboolean result, ret = TRUE;
 
 	for (dev = priv->devices; dev; dev = dev->next) {
-		g_debug ("Setting device %s to %s",
+		g_debug ("%s: Setting device %s to %s",
+			 __func__,
 		         urf_device_get_object_path (URF_DEVICE (dev->data)),
 		         blocked ? "blocked" : "unblocked");
 
