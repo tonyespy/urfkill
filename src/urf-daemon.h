@@ -52,6 +52,8 @@ typedef struct
 typedef enum
 {
 	URF_DAEMON_ERROR_GENERAL,
+	URF_DAEMON_ERROR_IN_PROGRESS,
+	URF_DAEMON_ERROR_EMERGENCY,
 } UrfDaemonError;
 
 #define URF_DAEMON_ERROR urf_daemon_error_quark ()

@@ -1,6 +1,7 @@
 /* -*- Mode: C; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*-
  *
  * Copyright (C) 2011 Gary Ching-Pang Lin <glin@suse.com>
+ * Copyright (C) 2014 Canonical Ltd.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -175,15 +176,13 @@ urf_device_set_hardware_blocked (UrfDevice *device, gboolean blocked)
 /**
  * urf_device_set_software_blocked:
  **/
-gboolean
-urf_device_set_software_blocked (UrfDevice *device, gboolean blocked)
+void
+urf_device_set_software_blocked (UrfDevice *device, gboolean blocked, GTask *task)
 {
-	g_return_val_if_fail (URF_IS_DEVICE (device), FALSE);
+	g_assert (URF_IS_DEVICE (device));
 
 	if (URF_GET_DEVICE_CLASS (device)->set_software_blocked)
-		return URF_GET_DEVICE_CLASS (device)->set_software_blocked (device, blocked);
-
-	return FALSE;
+		URF_GET_DEVICE_CLASS (device)->set_software_blocked (device, blocked, task);
 }
 
 /**

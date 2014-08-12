@@ -365,7 +365,6 @@ urf_daemon_flight_mode_cb (GObject *source,
 {
 	UrfDaemon        *daemon;
 	UrfDaemonPrivate *priv;
-	gboolean          result = FALSE;
 	GError            *error = NULL;
 
 	g_assert (URF_IS_DAEMON (source));
@@ -380,24 +379,12 @@ urf_daemon_flight_mode_cb (GObject *source,
 	// does any of this occur if flight-mode is auto-enabled at startup due to
 	// persistent state???
 
-	if (res) {
-		g_message ("%s: res is non-NULL", __func__);  // AWE
+	// AWE: pointer is always NULL on success...
+	g_task_propagate_pointer(G_TASK (res), &error);
 
-		// AWE: pointer is always NULL on success...
-		g_task_propagate_pointer(G_TASK (res), &error);
+	if (error == NULL) {
+		g_message ("%s *error == NULL (Success)", __func__);  // AWE
 
-		// AWE: no error returned means success...
-		if (error == NULL) {
-			g_message ("%s *error == NULL (Success)", __func__);  // AWE
-			result = TRUE;
-		} else {
-			g_message ("%s *error != NULL (Failed)", __func__);  // AWE
-			g_error_free (error);
-			error = NULL;
-		}
-	}
-
-	if (result == TRUE) {
 		priv->flight_mode = priv->pending_block;
 		urf_config_set_persist_state (priv->config, RFKILL_TYPE_ALL,
 		                              priv->pending_block
@@ -416,12 +403,20 @@ urf_daemon_flight_mode_cb (GObject *source,
 			g_warning ("Failed to emit FlightModeChanged: %s", error->message);
 			g_error_free (error);
 		}
+
+		g_dbus_method_invocation_return_value (priv->invocation,
+						       g_variant_new ("(b)", TRUE));
+
 	} else {
 		g_warning ("Failed to set device flight mode to %s", priv->pending_block ? "blocked" : "unblocked");
-	}
 
-	g_dbus_method_invocation_return_value (priv->invocation,
-	                                       g_variant_new ("(b)", result));
+		g_dbus_method_invocation_return_error (priv->invocation,
+						       error->domain,
+		                                       error->code,
+		                                       error->message);
+		g_error_free (error);
+		error = NULL;
+	}
 
 	priv->invocation = NULL;
 }

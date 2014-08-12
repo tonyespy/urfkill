@@ -1,6 +1,7 @@
 /* -*- Mode: C; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*-
  *
  * Copyright (C) 2011 Gary Ching-Pang Lin <glin@suse.com>
+ * Copyright (C) 2014 Canonical Ltd.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -76,7 +77,6 @@ struct _UrfDeviceKernelPrivate {
 };
 
 G_DEFINE_TYPE_WITH_PRIVATE (UrfDeviceKernel, urf_device_kernel, URF_TYPE_DEVICE)
-
 
 /**
  * emit_properites_changed
@@ -211,8 +211,8 @@ get_hard (UrfDevice *device)
 /**
  * set_soft:
  **/
-static gboolean
-kernel_set_soft (UrfDevice *device, gboolean blocked)
+static void
+kernel_set_soft (UrfDevice *device, gboolean blocked, GTask *task)
 {
 	UrfDeviceKernel *self = URF_DEVICE_KERNEL (device);
 	UrfDeviceKernelPrivate *priv = URF_DEVICE_KERNEL_GET_PRIVATE (self);
@@ -234,10 +234,14 @@ kernel_set_soft (UrfDevice *device, gboolean blocked)
 	if (len < 0) {
 		g_warning ("Failed to change RFKILL state: %s",
 			   g_strerror (errno));
-		return FALSE;
-	}
 
-	return TRUE;
+		g_task_return_new_error(task,
+					URF_DEVICE_KERNEL_ERROR, 0,
+					"set_soft failed: %s",
+					type_to_string (priv->type));
+	} else {
+		g_task_return_pointer (task, NULL, NULL);
+	}
 }
 
 /**
@@ -371,6 +375,8 @@ urf_device_kernel_init (UrfDeviceKernel *device)
 
 	priv->name = NULL;
 	priv->platform = FALSE;
+
+	// AWE: why is this never set??
 	priv->object_path = NULL;
 
 	fd = open("/dev/rfkill", O_RDWR | O_NONBLOCK);

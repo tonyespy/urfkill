@@ -56,6 +56,9 @@ struct UrfKillswitchPrivate
 	char		 *object_path;
 	GDBusConnection	 *connection;
 	GDBusNodeInfo	 *introspection_data;
+	GTask            *set_block_task;
+	GTask            *pending_device_task;
+	gboolean          pending_blocked;
 };
 
 G_DEFINE_TYPE (UrfKillswitch, urf_killswitch, G_TYPE_OBJECT)
@@ -245,29 +248,106 @@ urf_killswitch_del_device (UrfKillswitch *killswitch,
 }
 
 /**
- * urf_killswitch_set_software_blocked:
+ * urf_killswitch_soft_block_cb:
  **/
-gboolean
-urf_killswitch_set_software_blocked (UrfKillswitch *killswitch,
-                                     gboolean blocked)
+static void
+urf_killswitch_soft_block_cb (GObject *source,
+			      GAsyncResult *res,
+			      gpointer user_data)
 {
-	UrfKillswitchPrivate *priv = killswitch->priv;
-	GList *dev;
-	gboolean result, ret = TRUE;
+	UrfKillswitch  *killswitch;
+	UrfKillswitchPrivate *priv;
+	GError            *error = NULL;
+	GList *dev = user_data;
 
-	for (dev = priv->devices; dev; dev = dev->next) {
+	g_assert (URF_IS_KILLSWITCH (source));
+	killswitch = URF_KILLSWITCH (source);
+
+	priv = killswitch->priv;
+
+	g_assert (URF_IS_DEVICE(dev->data));
+
+	// pending_killswich_task should be match
+	g_assert (g_task_is_valid(res, source));
+	g_assert (G_TASK(res) == G_TASK(priv->pending_device_task));
+	priv->pending_device_task = NULL;
+
+	// AWE: pointer is always NULL on success...
+	g_task_propagate_pointer(G_TASK (res), &error);
+
+	if (error != NULL) {
+		g_message ("%s *error != NULL (Failed)", __func__);  // AWE
+
+		g_task_return_new_error(priv->set_block_task,
+					error->domain, error->code,
+					"set_block failed: %s",
+					urf_device_get_object_path (URF_DEVICE (dev->data)));
+
+		g_error_free (error);
+		error = NULL;
+
+		// AWE: want_state isn't available in the cb w/out extra work.
+		//					want_state ? "TRUE" : "FALSE");
+
+		priv->set_block_task = NULL;
+
+	} else if (dev->next == NULL) {
+		g_message ("%s all done - firing set_block_task OK", __func__);  // AWE
+
+		g_task_return_pointer (priv->set_block_task, NULL, NULL);
+		priv->set_block_task = NULL;
+	} else {
+		dev = dev->next;
+
 		g_debug ("%s: Setting device %s to %s",
 			 __func__,
-		         urf_device_get_object_path (URF_DEVICE (dev->data)),
-		         blocked ? "blocked" : "unblocked");
+			 urf_device_get_object_path (URF_DEVICE (dev->data)),
+			 priv->pending_blocked ? "blocked" : "unblocked");
 
-		result = urf_device_set_software_blocked (URF_DEVICE (dev->data), blocked);
+		priv->pending_device_task = g_task_new(killswitch,
+						       NULL,
+						       urf_killswitch_soft_block_cb,
+						       dev);
 
-		if (!result)
-			ret = FALSE;
+		urf_device_set_software_blocked (URF_DEVICE (dev->data), priv->pending_blocked,
+						 priv->pending_device_task);
 	}
+}
 
-	return ret;
+/**
+ * urf_killswitch_set_software_blocked:
+ **/
+void
+urf_killswitch_set_software_blocked (UrfKillswitch *killswitch,
+                                     gboolean blocked,
+				     GTask          *task)
+{
+	UrfKillswitchPrivate *priv = killswitch->priv;
+	GList *dev = priv->devices;
+
+	g_message ("%s", __func__);  // AWE
+
+	if (dev) {
+		priv->set_block_task = task;
+		priv->pending_blocked = blocked;
+
+		g_debug ("%s: Setting device %s to %s",
+			 __func__,
+			 urf_device_get_object_path (URF_DEVICE (dev->data)),
+			 blocked ? "blocked" : "unblocked");
+
+		priv->pending_device_task = g_task_new(killswitch,
+						       NULL,
+						       urf_killswitch_soft_block_cb,
+						       dev);
+
+		urf_device_set_software_blocked (URF_DEVICE (dev->data), blocked,
+						 priv->pending_device_task);
+	} else {
+		g_message ("%s all done - firing set_block_task OK", __func__);
+
+		g_task_return_pointer (task, NULL, NULL);
+	}
 }
 
 /**

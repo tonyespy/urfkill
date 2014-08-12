@@ -1,6 +1,7 @@
 /* -*- Mode: C; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*-
  *
  * Copyright (C) 2014 Mathieu Trudel-Lapierre <mathieu-tl@ubuntu.com>
+ * Copyright (C) 2014 Canonical Ltd.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -31,11 +32,15 @@
 
 #include <linux/rfkill.h>
 
+#include "urf-daemon.h"
 #include "urf-device-ofono.h"
 
 #include "urf-utils.h"
 
 #define URF_DEVICE_OFONO_INTERFACE "org.freedesktop.URfkill.Device.Ofono"
+
+#define OFONO_ERROR_IN_PROGRESS "GDBus.Error:org.ofono.Error.InProgress"
+#define OFONO_ERROR_EMERGENCY   "GDBus.Error:org.ofono.Error.EmergencyActive"
 
 static const char introspection_xml[] =
 "  <interface name='org.freedesktop.URfkill.Device.Ofono'>"
@@ -63,10 +68,10 @@ struct _UrfDeviceOfonoPrivate {
 
 	GDBusProxy *proxy;
 	GCancellable *cancellable;
+	GTask *pending_block_task;
 };
 
 G_DEFINE_TYPE_WITH_PRIVATE (UrfDeviceOfono, urf_device_ofono, URF_TYPE_DEVICE)
-
 
 /**
  * urf_device_ofono_update_states:
@@ -183,28 +188,52 @@ set_online_cb (GObject *source_object,
 	UrfDeviceOfonoPrivate *priv = URF_DEVICE_OFONO_GET_PRIVATE (modem);
 	GVariant *result;
 	GError *error = NULL;
+	gint code = 0;
 
 	result = g_dbus_proxy_call_finish (priv->proxy, res, &error);
 
 	if (!error) {
 		g_debug ("online change successful: %s",
 		         g_variant_print (result, TRUE));
+
+		if (priv->pending_block_task) {
+			g_task_return_pointer (priv->pending_block_task, NULL, NULL);
+			priv->pending_block_task = NULL;
+		}
 	} else {
 		g_warning ("Could not set Online property in oFono: %s",
 		           error ? error->message : "(unknown error)");
+
+		// AWE: these errors could be URF_DEVICE_OFONO_ERRORs, but
+		// then urf-daemon would have to check for them and translate
+		if (error->message) {
+			if (g_strcmp0 (error->message, OFONO_ERROR_IN_PROGRESS) == 0) {
+				code = URF_DAEMON_ERROR_IN_PROGRESS;
+			} else if (g_strcmp0 (error->message, OFONO_ERROR_EMERGENCY) == 0) {
+				code = URF_DAEMON_ERROR_EMERGENCY;
+			}
+		}
+
+		if (priv->pending_block_task)
+			g_task_return_new_error(priv->pending_block_task,
+						URF_DAEMON_ERROR, code,
+						"set_soft failed: %s",
+						priv->object_path);
 	}
 }
 
 /**
  * set_soft:
  **/
-static gboolean
-ofono_set_soft (UrfDevice *device, gboolean blocked)
+static void
+ofono_set_soft (UrfDevice *device, gboolean blocked, GTask *task)
 {
 	UrfDeviceOfono *modem = URF_DEVICE_OFONO (device);
 	UrfDeviceOfonoPrivate *priv = URF_DEVICE_OFONO_GET_PRIVATE (modem);
 
 	priv->soft = blocked;
+	priv->pending_block_task = task;
+
 	g_dbus_proxy_call (priv->proxy,
 	                   "SetProperty",
 	                   g_variant_new ("(sv)",
@@ -215,9 +244,6 @@ ofono_set_soft (UrfDevice *device, gboolean blocked)
 	                   priv->cancellable,
 	                   (GAsyncReadyCallback) set_online_cb,
 	                   modem);
-
-	/* always succeeds since it's an async call */
-	return TRUE;
 }
 
 /**
@@ -272,7 +298,7 @@ modem_signal_cb (GDBusProxy *proxy,
 			powered = g_variant_get_boolean (prop_value);
 
 			if (powered)
-				ofono_set_soft (URF_DEVICE (modem), priv->soft);
+				ofono_set_soft (URF_DEVICE (modem), priv->soft, NULL);
 		}
 
 		g_free (prop_name);
@@ -303,7 +329,7 @@ get_properties_cb (GObject *source_object,
 		while (g_variant_iter_next (&iter, "{sv}", &key, &variant)) {
 			if (g_strcmp0 ("Powered", key) == 0 &&
 			    g_variant_get_boolean (variant) == TRUE) {
-				ofono_set_soft (URF_DEVICE (modem), priv->soft);
+				ofono_set_soft (URF_DEVICE (modem), priv->soft, NULL);
 			}
 
 			g_hash_table_insert (priv->properties, g_strdup (key),

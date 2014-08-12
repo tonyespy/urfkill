@@ -80,21 +80,6 @@ urf_arbitrator_flight_mode_cb (GObject *source,
 			       GAsyncResult *res,
 			       gpointer user_data);
 
-/************************************************************************/
-
-#define URF_ARBITRATOR_ERROR (urf_arbitrator_error_quark ())
-
-static GQuark
-urf_arbitrator_error_quark (void)
-{
-	static GQuark quark = 0;
-	if (!quark)
-		quark = g_quark_from_static_string ("urf-arbitrator-error");
-	return quark;
-}
-
-/************************************************************************/
-
 /**
  * urf_arbitrator_find_device:
  **/
@@ -127,7 +112,6 @@ urf_arbitrator_set_block (UrfArbitrator  *arbitrator,
 			  GTask          *task)
 {
 	UrfArbitratorPrivate *priv = arbitrator->priv;
-	gboolean result = FALSE;
 
 	g_message ("%s", __func__);  // AWE
 
@@ -139,24 +123,7 @@ urf_arbitrator_set_block (UrfArbitrator  *arbitrator,
                    type_to_string (type),
                    block ? "blocked" : "unblocked");
 
-	result = urf_killswitch_set_software_blocked (priv->killswitch[type], block);
-
-	if (task) {
-		if (result == FALSE) {
-
-			// AWE: this warning no longer makes sense...
-			g_warning ("No device with type %u to block", type);
-
-			// AWE: should I used "_(set_block failed: %s %s)"?
-			g_task_return_new_error(task, URF_ARBITRATOR_ERROR, 0,
-						"set_block failed: %s %s",
-						type_to_string(type),
-					        block ? "TRUE" : "FALSE");
-		} else {
-			g_task_return_pointer (task, NULL, NULL);
-			urf_config_set_persist_state (priv->config, type, block);
-		}
-	}
+	urf_killswitch_set_software_blocked (priv->killswitch[type], block, task);
 }
 
 /**
@@ -181,7 +148,8 @@ urf_arbitrator_set_block_idx (UrfArbitrator  *arbitrator,
                            type_to_string (urf_device_get_device_type (device)),
                            block ? "blocked" : "unblocked");
 
-		result = urf_device_set_software_blocked (device, block);
+		// AWE: fix
+		urf_device_set_software_blocked (device, block, NULL);
 	} else {
 		g_warning ("Block index: No device with index %u", index);
 	}
@@ -189,9 +157,10 @@ urf_arbitrator_set_block_idx (UrfArbitrator  *arbitrator,
 	return result;
 }
 
-// AWE/TODO: can this be made static, and the name shortened??
-
-gboolean
+/**
+ * handle_flight_mode_killswitch
+ **/
+static gboolean
 handle_flight_mode_killswitch(UrfArbitrator  *arbitrator,
 			      const gboolean block,
 			      int i)
@@ -297,22 +266,19 @@ urf_arbitrator_flight_mode_cb (GObject *source,
 	// AWE: error means failure...
 	if (error != NULL) {
 		g_message ("%s *error != NULL (Failed)", __func__);  // AWE
-		g_error_free (error);
-		error = NULL;
 
-		// AWE: should I used "_(set_block failed: %s %s)"?
 		g_task_return_new_error(priv->flight_mode_task,
-					URF_ARBITRATOR_ERROR, 0,
+					error->domain, error->code,
 					"set_block failed: %s",
 					type_to_string(i));
 
+		g_error_free (error);
+		error = NULL;
 
 		// AWE: want_state isn't available in the cb w/out extra work.
 		//					want_state ? "TRUE" : "FALSE");
 
 		priv->flight_mode_task = NULL;
-
-		// AWE: reset next_block_index to 0??
 
 	} else if (priv->next_block_index == NUM_RFKILL_TYPES) {
 		g_message ("%s all done - firing fm_task OK", __func__);  // AWE
