@@ -153,11 +153,13 @@ urf_killswitch_state_refresh (UrfKillswitch *killswitch)
 	if (platform_checked)
 		new_state = aggregate_states (platform, new_state);
 
-	// AWE: make this debug & addd info so that you can tell
-	// what kind of killswitch this is!  Also message is really long!
+	// AWE: this should probably be g_debug
 
-	g_message("%s: killswitch state: %s new_state: %s", __func__,
-		  state_to_string(priv->state), state_to_string(new_state));
+	g_message("%s: %s state: %s new_state: %s", __func__,
+		  type_to_string (priv->type));
+		  state_to_string(priv->state),
+			  state_to_string(new_state));
+
 	/* emit a signal for change */
 	if (priv->state != new_state) {
 		priv->state = new_state;

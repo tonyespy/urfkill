@@ -325,7 +325,7 @@ urf_arbitrator_set_flight_mode (UrfArbitrator  *arbitrator,
 {
 	UrfArbitratorPrivate *priv = arbitrator->priv;
 
-	g_message("%s: set_flight_mode: %d:", __func__, (int) block);
+	g_message("%s: block: %d:", __func__, (int) block);
 
 	priv->flight_mode_task = task;
 	priv->pending_block_task = NULL;

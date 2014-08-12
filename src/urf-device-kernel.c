@@ -39,6 +39,8 @@
 #define RFKILL_EVENT_SIZE_V1    8
 #endif
 
+#include "urf-daemon.h"
+
 #include "urf-device-kernel.h"
 
 #include "urf-utils.h"
@@ -235,12 +237,18 @@ kernel_set_soft (UrfDevice *device, gboolean blocked, GTask *task)
 		g_warning ("Failed to change RFKILL state: %s",
 			   g_strerror (errno));
 
-		g_task_return_new_error(task,
-					URF_DEVICE_KERNEL_ERROR, 0,
-					"set_soft failed: %s",
-					type_to_string (priv->type));
+
+		// AWE/FIXME: direct block calls don't yet pass
+		// valid tasks...
+
+		if (task)
+			g_task_return_new_error(task,
+						URF_DAEMON_ERROR, 0,
+						"set_soft failed: %s",
+						type_to_string (priv->type));
 	} else {
-		g_task_return_pointer (task, NULL, NULL);
+		if (task)
+			g_task_return_pointer (task, NULL, NULL);
 	}
 }
 
