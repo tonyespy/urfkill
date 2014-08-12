@@ -1,6 +1,7 @@
 /* -*- Mode: C; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*-
  *
  * Copyright (C) 2011 Gary Ching-Pang Lin <glin@suse.com>
+ * Copyright (C) 2014 Canonical Ltd.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -124,6 +125,8 @@ urf_killswitch_state_refresh (UrfKillswitch *killswitch)
 	GList *iter;
 	GError *error = NULL;
 
+	g_assert (URF_IS_KILLSWITCH ( killswitch ));
+
 	if (priv->devices == NULL) {
 		priv->state = KILLSWITCH_STATE_NO_ADAPTER;
 		priv->saved_state = KILLSWITCH_STATE_NO_ADAPTER;
@@ -156,15 +159,18 @@ urf_killswitch_state_refresh (UrfKillswitch *killswitch)
 	// AWE: this should probably be g_debug
 
 	g_message("%s: %s state: %s new_state: %s", __func__,
-		  type_to_string (priv->type));
+		  type_to_string (priv->type),
 		  state_to_string(priv->state),
-			  state_to_string(new_state));
+		  state_to_string(new_state));
 
 	/* emit a signal for change */
 	if (priv->state != new_state) {
 		priv->state = new_state;
 		emit_properites_changed (killswitch);
 		g_debug("Emitting StateChanged on killswitch %s", priv->object_path);
+
+		g_assert (G_IS_DBUS_CONNECTION (priv->connection));
+
 		g_dbus_connection_emit_signal (priv->connection,
 		                               NULL,
 		                               priv->object_path,
@@ -489,6 +495,8 @@ urf_killswitch_register_switch (UrfKillswitch *killswitch)
 	guint reg_id;
 	GError *error = NULL;
 
+	g_message ("%s", __func__);
+
 	priv->introspection_data = g_dbus_node_info_new_for_xml (introspection_xml, NULL);
 	g_assert (priv->introspection_data != NULL);
 
@@ -498,6 +506,8 @@ urf_killswitch_register_switch (UrfKillswitch *killswitch)
 		g_error_free (error);
 		return FALSE;
 	}
+
+	g_assert (G_IS_DBUS_CONNECTION (priv->connection));
 
 	priv->object_path = g_strdup_printf (BASE_OBJECT_PATH"%s",
 					     type_to_string (priv->type));

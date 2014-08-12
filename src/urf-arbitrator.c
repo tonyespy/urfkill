@@ -253,17 +253,15 @@ urf_arbitrator_flight_mode_cb (GObject *source,
 
 	priv = arbitrator->priv;
 
-	// pending_killswich_task should be match
 	g_assert (g_task_is_valid(res, source));
 	g_assert (G_TASK(res) == G_TASK(priv->pending_block_task));
+
 	priv->pending_block_task = NULL;
+	i = GPOINTER_TO_INT(g_task_get_task_data(G_TASK (res)));
 
 	// AWE: pointer is always NULL on success...
 	g_task_propagate_pointer(G_TASK (res), &error);
 
-	i = GPOINTER_TO_INT(g_task_get_task_data(G_TASK (res)));
-
-	// AWE: error means failure...
 	if (error != NULL) {
 		g_message ("%s *error != NULL (Failed)", __func__);  // AWE
 
