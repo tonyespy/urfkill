@@ -284,24 +284,30 @@ urf_killswitch_soft_block_cb (GObject *source,
 	if (error != NULL) {
 		g_message ("%s *error != NULL (Failed)", __func__);  // AWE
 
-		g_task_return_new_error(priv->set_block_task,
-					error->domain, error->code,
-					"set_block failed: %s",
-					urf_device_get_object_path (URF_DEVICE (dev->data)));
+		// AWE: want_state isn't available in the cb w/out extra work.
+		//					want_state ? "TRUE" : "FALSE");
+
+		if (priv->set_block_task) {
+			g_message ("%s: returning new error: %s", __func__, error->message);  // AWE
+			g_task_return_new_error(priv->set_block_task,
+						error->domain, error->code,
+						"set_block failed: %s",
+						urf_device_get_object_path (URF_DEVICE (dev->data)));
+
+			priv->set_block_task = NULL;
+		}
 
 		g_error_free (error);
 		error = NULL;
 
-		// AWE: want_state isn't available in the cb w/out extra work.
-		//					want_state ? "TRUE" : "FALSE");
-
-		priv->set_block_task = NULL;
-
 	} else if (dev->next == NULL) {
-		g_message ("%s all done - firing set_block_task OK", __func__);  // AWE
+		g_message ("%s: all done", __func__);
 
-		g_task_return_pointer (priv->set_block_task, NULL, NULL);
-		priv->set_block_task = NULL;
+		if (priv->set_block_task) {
+			g_message ("%s: firing set_block_task OK", __func__);  // AWE
+			g_task_return_pointer (priv->set_block_task, NULL, NULL);
+			priv->set_block_task = NULL;
+		}
 	} else {
 		dev = dev->next;
 
@@ -350,9 +356,12 @@ urf_killswitch_set_software_blocked (UrfKillswitch *killswitch,
 		urf_device_set_software_blocked (URF_DEVICE (dev->data), blocked,
 						 priv->pending_device_task);
 	} else {
-		g_message ("%s all done - firing set_block_task OK", __func__);
+		g_message ("%s: no devices for %s", __func__, type_to_string (priv->type));
 
-		g_task_return_pointer (task, NULL, NULL);
+		if (task) {
+			g_message ("%s: calling task_return_pointer (no error)", __func__);
+			g_task_return_pointer (task, NULL, NULL);
+		}
 	}
 }
 
