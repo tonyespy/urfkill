@@ -41,6 +41,7 @@ enum
 	OPT_MASTER_KEY,
 	OPT_FORCE_SYNC,
 	OPT_PERSIST,
+	OPT_STRICT_FLIGHT_MODE,
 	OPT_UNKNOWN,
 };
 
@@ -73,6 +74,7 @@ typedef struct {
 	gboolean master_key;
 	gboolean force_sync;
 	gboolean persist;
+	gboolean strict_flight_mode;
 } Options;
 
 typedef struct {
@@ -107,6 +109,8 @@ get_option (const char *option)
 		return OPT_FORCE_SYNC;
 	else if (g_strcmp0 (option, "persist") == 0)
 		return OPT_PERSIST;
+	else if (g_strcmp0 (option, "strict_flight_mode") == 0)
+		return OPT_STRICT_FLIGHT_MODE;
 	return OPT_UNKNOWN;
 }
 
@@ -323,6 +327,12 @@ parse_xml_cdata_handler (void       *data,
 		else if (g_ascii_strcasecmp (str, "FALSE") == 0)
 			info->options.persist = FALSE;
 		break;
+	case OPT_STRICT_FLIGHT_MODE:
+		if (g_ascii_strcasecmp (str, "TRUE") == 0)
+			info->options.strict_flight_mode = TRUE;
+		else if (g_ascii_strcasecmp (str, "FALSE") == 0)
+			info->options.strict_flight_mode = FALSE;
+		break;
 	default:
 		break;
 	}
@@ -434,6 +444,7 @@ profile_xml_parse (DmiInfo    *hardware_info,
 	info->options.master_key = options->master_key;
 	info->options.force_sync = options->force_sync;
 	info->options.persist = options->persist;
+	info->options.strict_flight_mode = options->strict_flight_mode;
 
 	parser = XML_ParserCreate (NULL);
 	XML_SetUserData (parser, (void *)info);
@@ -457,6 +468,7 @@ profile_xml_parse (DmiInfo    *hardware_info,
 	options->master_key = info->options.master_key;
 	options->force_sync = info->options.force_sync;
 	options->persist = info->options.persist;
+	options->strict_flight_mode = info->options.strict_flight_mode;
 
 	g_free (info);
 	return TRUE;
@@ -513,6 +525,13 @@ load_configured_settings (UrfConfig *config)
 		g_error_free (error);
 	error = NULL;
 
+	ret = g_key_file_get_boolean (profile, "Profile", "strict_flight_mode", &error);
+	if (!error)
+		priv->options.persist = ret;
+	else
+		g_error_free (error);
+	error = NULL;
+
 	g_key_file_free (profile);
 
 	return TRUE;
@@ -556,6 +575,10 @@ save_configured_profile (UrfConfig *config)
 
 	value = priv->options.persist;
 	g_key_file_set_value (profile, "Profile", "persist",
+			      value?"true":"false");
+
+	value = priv->options.strict_flight_mode;
+	g_key_file_set_value (profile, "Profile", "strict_flight_mode",
 			      value?"true":"false");
 
 	content = g_key_file_to_data (profile, NULL, NULL);
@@ -617,6 +640,7 @@ urf_config_load_profile (UrfConfig *config)
 	options->master_key = priv->options.master_key;
 	options->force_sync = priv->options.force_sync;
 	options->persist = priv->options.persist;
+	options->strict_flight_mode = priv->options.strict_flight_mode;
 
 	profile_dir = g_dir_open (URFKILL_PROFILE_DIR, 0, NULL);
 	while ((file = g_dir_read_name (profile_dir))) {
@@ -649,6 +673,7 @@ urf_config_load_profile (UrfConfig *config)
 	priv->options.master_key = options->master_key;
 	priv->options.force_sync = options->force_sync;
 	priv->options.persist = options->persist;
+	priv->options.strict_flight_mode = options->strict_flight_mode;
 
 	save_configured_profile (config);
 
@@ -709,6 +734,13 @@ urf_config_load_from_file (UrfConfig  *config,
 		g_error_free (error);
 	error = NULL;
 
+	ret = g_key_file_get_boolean (key_file, "general", "strict_flight_mode", &error);
+	if (!error)
+		priv->options.strict_flight_mode = ret;
+	else
+		g_error_free (error);
+	error = NULL;
+
 	g_key_file_free (key_file);
 }
 
@@ -755,6 +787,15 @@ gboolean
 urf_config_get_persist (UrfConfig *config)
 {
 	return config->priv->options.persist;
+}
+
+/**
+ * urf_config_get_strict_flight_mode:
+ **/
+gboolean
+urf_config_get_strict_flight_mode (UrfConfig *config)
+{
+	return config->priv->options.strict_flight_mode;
 }
 
 /**
@@ -861,6 +902,7 @@ urf_config_init (UrfConfig *config)
 	priv->options.master_key = FALSE;
 	priv->options.force_sync = FALSE;
 	priv->options.persist = TRUE;
+	priv->options.strict_flight_mode = TRUE;
 	config->priv = priv;
 
 	urf_config_get_persistence_file (config);

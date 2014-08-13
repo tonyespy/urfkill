@@ -62,6 +62,7 @@ gboolean	 urf_config_get_key_control	(UrfConfig	*config);
 gboolean	 urf_config_get_master_key	(UrfConfig	*config);
 gboolean	 urf_config_get_force_sync	(UrfConfig	*config);
 gboolean	 urf_config_get_persist		(UrfConfig	*config);
+gboolean	 urf_config_get_strict_flight_mode	(UrfConfig	*config);
 
 gboolean	 urf_config_get_persist_state	(UrfConfig	*config,
 						 const gint type);
