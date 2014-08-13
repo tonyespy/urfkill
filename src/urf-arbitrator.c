@@ -235,7 +235,6 @@ handle_flight_mode_killswitch(UrfArbitrator  *arbitrator, const gboolean block)
 	}
 }
 
-
 /**
  * urf_arbitrator_flight_mode_cb:
  **/
@@ -700,6 +699,71 @@ event_cb (GIOChannel    *source,
 }
 
 /**
+ * urf_arbitrator_startup_cb:
+ **/
+static void
+urf_arbitrator_startup_cb (GObject *source,
+			   GAsyncResult *res,
+			   gpointer user_data)
+{
+	UrfArbitrator  *arbitrator;
+	UrfArbitratorPrivate *priv;
+	GError            *error = NULL;
+	UrfConfig         *config = user_data;
+	int i;
+
+	g_assert (URF_IS_ARBITRATOR (source));
+	g_assert (URF_IS_CONFIG (config));
+
+	arbitrator = URF_ARBITRATOR (source);
+	priv = arbitrator->priv;
+
+	g_message ("%s", __func__);  // AWE
+
+	g_assert (g_task_is_valid(res, source));
+
+	// AWE: pointer is always NULL on success...
+	g_task_propagate_pointer(G_TASK (res), &error);
+
+	if (error != NULL) {
+		g_message ("%s *error != NULL (Failed)", __func__);  // AWE
+
+		g_error_free (error);
+		error = NULL;
+
+		// AWE: there's no error to throw here...however
+		// this needs to be handled in a callback or
+		// the following set_block loop would interfere
+		// with the set_flight_mode() call which triggers
+		// this callback.
+		//
+		// ideally, this would be where we'd handle
+		// flight-mode retry on startup, howver as
+		// ofono hasn't yet been initialzied, this code
+		// currently only involves the kernel devices.
+		// ( see bug #1354713 ).
+	} else {
+		g_message ("%s: set_flight_mode finished OK", __func__);  // AWE: should be debug
+	}
+
+	// FIXME: doesn't this just duplicate code that flight_mode() performed already?
+	//
+	// set_flight_mode will call set_block for every device, and if the call succeeds, will
+	// reset the persist_state of each!!!
+
+	if (priv->persist) {
+		/* Set all the devices that had saved state to what was saved */
+		for (i = RFKILL_TYPE_ALL + 1; i < NUM_RFKILL_TYPES; i++)
+
+			// AWE: for now ignore callback for startup sequence...
+			urf_arbitrator_set_block (arbitrator, i, urf_config_get_persist_state (config, i), NULL);
+	}
+
+
+
+}
+
+/**
  * urf_arbitrator_startup
  **/
 gboolean
@@ -708,8 +772,8 @@ urf_arbitrator_startup (UrfArbitrator *arbitrator,
 {
 	UrfArbitratorPrivate *priv = arbitrator->priv;
 	struct rfkill_event event;
+	GTask *task;
 	int fd;
-	//	int i;
 
 	g_message ("%s",  __func__);
 
@@ -760,34 +824,28 @@ urf_arbitrator_startup (UrfArbitrator *arbitrator,
 		                                 arbitrator);
 	}
 
-	// TODO: Need to fix this code, doesn't use GTask
+
 
 	/* Set initial flight mode state from persistence */
 
-	// AWE
+	// AWE:
 	//
-	// 1. is persist only used by us??
+	// 1. is persist only used by ubuntu?
 	//
-	// 2. this code seems to run before the modem has been detected!!!
-	if (priv->persist)
+	// 2. this code runs before the modem has been detected!
+	//
+	// 3. FIXME - doesn't use GTask
+	if (priv->persist) {
+
+		task = g_task_new(arbitrator,
+				  NULL,
+				  urf_arbitrator_startup_cb,
+				  config);
+
 		urf_arbitrator_set_flight_mode (arbitrator,
 						urf_config_get_persist_state (config, RFKILL_TYPE_ALL),
-						NULL);
-
-
-	// FIXME: doesn't this just duplicate code that flight_mode() performed already?
-	//
-	// set_flight_mode will call set_block for every device, and if the call succeeds, will
-	// reset the persist_state of each!!!
-
-	//	if (priv->persist) {
-	//		/* Set all the devices that had saved state to what was saved */
-	//		for (i = RFKILL_TYPE_ALL + 1; i < NUM_RFKILL_TYPES; i++) {
-
-			// AWE: for now ignore callback for startup sequence...
-	//			urf_arbitrator_set_block (arbitrator, i, urf_config_get_persist_state (config, i), NULL);
-	//		}
-	//	}
+						task);
+	}
 
 	return TRUE;
 }
