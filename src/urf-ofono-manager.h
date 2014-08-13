@@ -38,7 +38,8 @@ GType urf_ofono_manager_get_type (void);
 
 UrfOfonoManager* urf_ofono_manager_new (void);
 gboolean urf_ofono_manager_startup (UrfOfonoManager *ofono,
-                                    UrfArbitrator *arbitrator);
+                                    UrfArbitrator *arbitrator,
+				    GDBusConnection *connection);
 
 G_END_DECLS
 

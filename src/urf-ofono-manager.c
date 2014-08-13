@@ -173,6 +173,23 @@ ofono_signal_cb (GDBusProxy *proxy,
 }
 
 static void
+ofono_get_modems (UrfOfonoManager *ofono)
+{
+	g_cancellable_reset (ofono->cancellable);
+	g_dbus_proxy_call (ofono->proxy,
+			   "GetModems",
+			   NULL,
+			   G_DBUS_CALL_FLAGS_NONE,
+			   -1,
+			   ofono->cancellable,
+			   ofono_get_modems_cb,
+			   ofono);
+
+	g_signal_connect (ofono->proxy, "g-signal",
+			  G_CALLBACK (ofono_signal_cb), ofono);
+}
+
+static void
 ofono_proxy_ready_cb (GObject *source_object,
                       GAsyncResult *res,
                       gpointer user_data)
@@ -182,21 +199,10 @@ ofono_proxy_ready_cb (GObject *source_object,
 
 	ofono->proxy = g_dbus_proxy_new_finish (res, &error);
 
-	if (!error) {
-		g_cancellable_reset (ofono->cancellable);
-		g_dbus_proxy_call (ofono->proxy,
-		                   "GetModems",
-		                   NULL,
-		                   G_DBUS_CALL_FLAGS_NONE,
-		                   -1,
-		                   ofono->cancellable,
-		                   ofono_get_modems_cb,
-		                   ofono);
-		g_signal_connect (ofono->proxy, "g-signal",
-		                  G_CALLBACK (ofono_signal_cb), ofono);
-	} else {
+	if (error == NULL)
+		ofono_get_modems (ofono);
+	else
 		g_warning("Could not get oFono Modem proxy.");
-	}
 }
 
 static void
@@ -207,19 +213,22 @@ on_ofono_appeared (GDBusConnection *connection,
 {
 	UrfOfonoManager *ofono = user_data;
 
-	g_message("oFono appeared on the bus");  // AWE
+	g_message("oFono appeared on the bus");  // AWE: should be g_debug
 
-	g_cancellable_reset (ofono->cancellable);
-	g_dbus_proxy_new (connection,
-	                  G_DBUS_PROXY_FLAGS_NONE,
-	                  NULL,
-	                  "org.ofono",
-	                  "/",
-	                  "org.ofono.Manager",
-	                  ofono->cancellable,
-	                  ofono_proxy_ready_cb,
-	                  ofono);
+	if (ofono->proxy == NULL) {
+		g_message("trying to create ofono proxy");  // AWE: should be g_debug
 
+		g_cancellable_reset (ofono->cancellable);
+		g_dbus_proxy_new (connection,
+				  G_DBUS_PROXY_FLAGS_NONE,
+				  NULL,
+				  "org.ofono",
+				  "/",
+				  "org.ofono.Manager",
+				  ofono->cancellable,
+				  ofono_proxy_ready_cb,
+				  ofono);
+	}
 }
 
 static void
@@ -253,10 +262,17 @@ urf_ofono_manager_class_init (GObjectClass *object_class)
 	object_class->finalize = urf_ofono_manager_finalize;
 }
 
+// AWE: why bother with a retval if always returns TRUE???
+
 gboolean
 urf_ofono_manager_startup (UrfOfonoManager *ofono,
-                           UrfArbitrator *arbitrator)
+                           UrfArbitrator *arbitrator,
+			   GDBusConnection *connection)
 {
+	GError *error = NULL;
+
+	g_message ("%s", __func__);
+
 	ofono->arbitrator = g_object_ref (arbitrator);
 
 	ofono->watch_id = g_bus_watch_name (G_BUS_TYPE_SYSTEM,
@@ -266,6 +282,24 @@ urf_ofono_manager_startup (UrfOfonoManager *ofono,
 	                                    on_ofono_vanished,
 	                                    ofono,
 	                                    NULL);
+
+	// try to register immediately, if it fails, rely on watcher
+	g_cancellable_reset (ofono->cancellable);
+	ofono->proxy = g_dbus_proxy_new_sync (connection,
+					      G_DBUS_PROXY_FLAGS_NONE,
+					      NULL,
+					      "org.ofono",
+					      "/",
+					      "org.ofono.Manager",
+					      ofono->cancellable,
+					      &error);
+	if (error != NULL) {
+		g_warning("%s: initial proxy creation for ofono failed: %s",
+			  __func__, error->message);
+	} else {
+		g_message("%s: proxy_new_sync succeeded", __func__);
+		ofono_get_modems (ofono);
+	}
 
 	return TRUE;
 }

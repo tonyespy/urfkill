@@ -678,14 +678,14 @@ urf_daemon_startup (UrfDaemon *daemon)
 		goto out;
 	}
 
+	ret = urf_ofono_manager_startup (priv->ofono_manager, priv->arbitrator, priv->connection);
+
 	/* start up the arbitrator */
 	ret = urf_arbitrator_startup (priv->arbitrator, priv->config);
 	if (!ret) {
 		g_warning ("failed to setup arbitrator");
 		goto out;
 	}
-
-	ret = urf_ofono_manager_startup (priv->ofono_manager, priv->arbitrator);
 
 	if (priv->key_control) {
 		/* start up input device monitor */
