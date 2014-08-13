@@ -155,8 +155,6 @@ urf_arbitrator_set_block_idx (UrfArbitrator  *arbitrator,
 	return result;
 }
 
-// AWE: ADD pull-request #8 logic here!!!
-
 /**
  * handle_flight_mode_killswitch
  **/
@@ -169,40 +167,47 @@ handle_flight_mode_killswitch(UrfArbitrator  *arbitrator, const gboolean block)
 	// AWE: this calls urf_killswitch_state_refresh()
 	KillswitchState state = urf_killswitch_get_state (priv->killswitch[i]);
 	KillswitchState saved_state = KILLSWITCH_STATE_NO_ADAPTER;
-	gboolean want_state = FALSE;
+	gboolean want_state = block;
 
 	if (state != KILLSWITCH_STATE_NO_ADAPTER) {
 		g_message("%s: killswitch[%s] state: %s", __func__,
 			  type_to_string(i),
 			  state_to_string(state));
 
-		saved_state = urf_killswitch_get_saved_state(priv->killswitch[i]);
-		g_debug("saved_state is: %s", state_to_string(saved_state));
+		if (urf_config_get_strict_flight_mode (priv->config) == FALSE ||
+		    i != RFKILL_TYPE_WWAN) {
+
+			/* Handle modem separately: we shouldn't save states here,
+			 * because there is no UI switch for just modem.  Just force
+			 * on or offline.
+			 */
+
+			saved_state = urf_killswitch_get_saved_state(priv->killswitch[i]);
+			g_debug("saved_state is: %s", state_to_string(saved_state));
 
 
-		// this updates saved before knowing that set_block worked
-		// probably not a bad thing, but again not obvious
-		//
-		if (block)
-			urf_killswitch_set_saved_state(priv->killswitch[i], state);
+			// this updates saved before knowing that set_block worked
+			// probably not a bad thing, but again not obvious
+			//
+			if (block)
+				urf_killswitch_set_saved_state(priv->killswitch[i], state);
 
-		// It'd be nice to simplify this a bit... It's pretty hard to
-		// understand
+			// It'd be nice to simplify this a bit... It's pretty hard to
+			// understand
 
 
-		// also, if (unblock == FALSE && saved_state != state) this code
-		// relies on the value of want_state from the previous loop iteration
-		// as want_state is only initialized at the start of the function!!
-		//
-		// otherwise if saved_state && state are both SOFT or HARD_BLOCK, then
-		// want_state is set to BLOCK.  If a device ( !GSM ) was blocked before
-		// FM is enabled, this prevents it from being unblocked when FM is
-		// disabled.
+			// also, if (unblock == FALSE && saved_state != state) this code
+			// relies on the value of want_state from the previous loop iteration
+			// as want_state is only initialized at the start of the function!!
+			//
+			// otherwise if saved_state && state are both SOFT or HARD_BLOCK, then
+			// want_state is set to BLOCK.  If a device ( !GSM ) was blocked before
+			// FM is enabled, this prevents it from being unblocked when FM is
+			// disabled.
 
-		if (!block && state == saved_state)
-			want_state = (gboolean)(saved_state > KILLSWITCH_STATE_UNBLOCKED);
-		else
-			want_state = block;
+			if (!block && state == saved_state)
+				want_state = (gboolean)(saved_state > KILLSWITCH_STATE_UNBLOCKED);
+		}
 
 		g_debug ("calling set_block %s %s",
 			 type_to_string(i),
