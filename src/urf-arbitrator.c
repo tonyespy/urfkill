@@ -69,7 +69,7 @@ struct UrfArbitratorPrivate {
 	UrfKillswitch	*killswitch[NUM_RFKILL_TYPES];
 	GTask           *flight_mode_task;
 	GTask           *pending_block_task;
-	int              next_block_index;
+	int              block_index;
 	gboolean         pending_block;
 };
 
@@ -113,8 +113,6 @@ urf_arbitrator_set_block (UrfArbitrator  *arbitrator,
 {
 	UrfArbitratorPrivate *priv = arbitrator->priv;
 
-	g_message ("%s", __func__);  // AWE
-
 	g_return_val_if_fail (type >= 0, FALSE);
 	g_return_val_if_fail (type < NUM_RFKILL_TYPES, FALSE);
 
@@ -157,15 +155,18 @@ urf_arbitrator_set_block_idx (UrfArbitrator  *arbitrator,
 	return result;
 }
 
+// AWE: ADD pull-request #8 logic here!!!
+
 /**
  * handle_flight_mode_killswitch
  **/
 static gboolean
-handle_flight_mode_killswitch(UrfArbitrator  *arbitrator,
-			      const gboolean block,
-			      int i)
+handle_flight_mode_killswitch(UrfArbitrator  *arbitrator, const gboolean block)
 {
 	UrfArbitratorPrivate *priv = arbitrator->priv;
+	int i = priv->block_index++;
+
+	// AWE: this calls urf_killswitch_state_refresh()
 	KillswitchState state = urf_killswitch_get_state (priv->killswitch[i]);
 	KillswitchState saved_state = KILLSWITCH_STATE_NO_ADAPTER;
 	gboolean want_state = FALSE;
@@ -253,6 +254,8 @@ urf_arbitrator_flight_mode_cb (GObject *source,
 
 	priv = arbitrator->priv;
 
+	g_message ("%s", __func__);  // AWE
+
 	g_assert (g_task_is_valid(res, source));
 	g_assert (G_TASK(res) == G_TASK(priv->pending_block_task));
 
@@ -265,10 +268,11 @@ urf_arbitrator_flight_mode_cb (GObject *source,
 	if (error != NULL) {
 		g_message ("%s *error != NULL (Failed)", __func__);  // AWE
 
-		g_task_return_new_error(priv->flight_mode_task,
-					error->domain, error->code,
-					"set_block failed: %s",
-					type_to_string(i));
+		if (priv->flight_mode_task != NULL)
+			g_task_return_new_error(priv->flight_mode_task,
+						error->domain, error->code,
+						"set_block failed: %s",
+						type_to_string(i));
 
 		g_error_free (error);
 		error = NULL;
@@ -278,24 +282,25 @@ urf_arbitrator_flight_mode_cb (GObject *source,
 
 		priv->flight_mode_task = NULL;
 
-	} else if (priv->next_block_index == NUM_RFKILL_TYPES) {
-		g_message ("%s all done - firing fm_task OK", __func__);  // AWE
+	} else if (priv->block_index == NUM_RFKILL_TYPES) {
+		g_message ("%s: block_index: %d; all done",
+			   __func__, priv->block_index);  // AWE
 
-		g_task_return_pointer (priv->flight_mode_task, NULL, NULL);
-		priv->flight_mode_task = NULL;
+		if (priv->flight_mode_task != NULL) {
+			g_message ("%s: firing flight_mode_task", __func__);
+
+			g_task_return_pointer (priv->flight_mode_task, NULL, NULL);
+			priv->flight_mode_task = NULL;
+		}
 	} else {
 		g_message("%s: more killswitches to process - next_idx: %d", __func__,
-			  priv->next_block_index);
+			  priv->block_index);
 
-		for (; priv->next_block_index < NUM_RFKILL_TYPES;)
-			if (!handle_flight_mode_killswitch(arbitrator,
-							   priv->pending_block,
-							   priv->next_block_index++))
+		for (; priv->block_index < NUM_RFKILL_TYPES;)
+			if (!handle_flight_mode_killswitch(arbitrator, priv->pending_block))
 				break;
 
-		g_message ("%s all done - checking pending_block_task", __func__);  // AWE
-
-		// trigger flight_mode task if last killswitches were NO_ADAPTER
+		// trigger flight_mode task if last killswitch was NO_ADAPTER case
 		if (priv->pending_block_task == NULL) {
 			g_message ("%s  pending_block_task is NULL", __func__);  // AWE
 
@@ -323,28 +328,24 @@ urf_arbitrator_set_flight_mode (UrfArbitrator  *arbitrator,
 {
 	UrfArbitratorPrivate *priv = arbitrator->priv;
 
-	g_message("%s: block: %d:", __func__, (int) block);
+	g_message("%s: block: %d", __func__, (int) block);
 
 	priv->flight_mode_task = task;
 	priv->pending_block_task = NULL;
 	priv->pending_block = block;
 
-	for (priv->next_block_index = RFKILL_TYPE_ALL + 1;
-	     priv->next_block_index < NUM_RFKILL_TYPES;)
-
-		if (!handle_flight_mode_killswitch(arbitrator,
-						   block,
-						   priv->next_block_index++))
+	for (priv->block_index = RFKILL_TYPE_ALL + 1;
+	     priv->block_index < NUM_RFKILL_TYPES;)
+		if (!handle_flight_mode_killswitch(arbitrator, block))
 			break;
 
 	g_message("%s: handle_flight_mode_killswitch returned FALSE", __func__);
 
 	// AWE: handle case where all adapters are missing
-	if (priv->pending_block_task == NULL) {
-		g_message("%s: no pending_block_task - firing fm_task", __func__);
-
-		g_task_return_pointer (priv->flight_mode_task, NULL, NULL);
-		priv->flight_mode_task = NULL;
+	if (priv->pending_block_task == NULL && priv->flight_mode_task != NULL) {
+			g_message("%s: no pending_block_task - firing fm_task", __func__);
+			g_task_return_pointer (priv->flight_mode_task, NULL, NULL);
+			priv->flight_mode_task = NULL;
 	}
 }
 

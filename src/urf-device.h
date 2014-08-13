@@ -85,6 +85,7 @@ gboolean		 urf_device_update_states	(UrfDevice	*device,
 							 const gboolean	 soft,
 							 const gboolean	 hard);
 
+GDBusConnection		*urf_device_get_connection	(UrfDevice	*device);
 gint			 urf_device_get_index		(UrfDevice	*device);
 const char		*urf_device_get_object_path	(UrfDevice	*device);
 gint			 urf_device_get_device_type	(UrfDevice	*device);
@@ -99,6 +100,7 @@ gboolean		 urf_device_is_software_blocked	(UrfDevice	*device);
 
 gboolean		 urf_device_register_device	(UrfDevice			*device,
 							 const GDBusInterfaceVTable	 vtable,
+							 char    			*object_path,
 							 const char			*xml);
 
 G_END_DECLS

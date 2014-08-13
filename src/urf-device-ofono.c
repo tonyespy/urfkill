@@ -59,7 +59,6 @@ enum
 
 struct _UrfDeviceOfonoPrivate {
 	gint index;
-	char *object_path;
 	char *name;
 
 	GHashTable *properties;
@@ -85,16 +84,6 @@ urf_device_ofono_update_states (UrfDeviceOfono      *device,
 {
 
 	return TRUE;
-}
-
-gchar *
-urf_device_ofono_get_path (UrfDeviceOfono *ofono)
-{
-	UrfDeviceOfonoPrivate *priv = URF_DEVICE_OFONO_GET_PRIVATE (ofono);
-
-	g_return_val_if_fail (URF_IS_DEVICE_OFONO (ofono), NULL);
-
-	return g_strdup(priv->object_path);
 }
 
 /**
@@ -191,7 +180,7 @@ set_online_cb (GObject *source_object,
 
 	result = g_dbus_proxy_call_finish (priv->proxy, res, &error);
 
-	if (!error) {
+	if (error == NULL) {
 		g_debug ("online change successful: %s",
 		         g_variant_print (result, TRUE));
 
@@ -213,11 +202,13 @@ set_online_cb (GObject *source_object,
 			}
 		}
 
-		if (priv->pending_block_task)
+		if (priv->pending_block_task) {
 			g_task_return_new_error(priv->pending_block_task,
 						URF_DAEMON_ERROR, code,
 						"set_soft failed: %s",
-						priv->object_path);
+						urf_device_get_object_path (URF_DEVICE (modem)));
+			priv->pending_block_task = NULL;
+		}
 	}
 }
 
@@ -229,6 +220,10 @@ ofono_set_soft (UrfDevice *device, gboolean blocked, GTask *task)
 {
 	UrfDeviceOfono *modem = URF_DEVICE_OFONO (device);
 	UrfDeviceOfonoPrivate *priv = URF_DEVICE_OFONO_GET_PRIVATE (modem);
+
+	g_message ("%s: Setting WWAN to %s",
+		   __func__,
+	           blocked ? "blocked" : "unblocked");
 
 	priv->soft = blocked;
 	priv->pending_block_task = task;
@@ -276,7 +271,7 @@ modem_signal_cb (GDBusProxy *proxy,
 		GVariant *prop_value = NULL;
 
 		g_debug ("properties changed for %s: %s",
-		         priv->object_path,
+			 urf_device_get_object_path (URF_DEVICE (modem)),
 		         g_variant_print (parameters, TRUE));
 
 		g_variant_get_child (parameters, 0, "s", &prop_name);
@@ -321,7 +316,8 @@ get_properties_cb (GObject *source_object,
 
 	if (!error) {
 		properties = g_variant_get_child_value (result, 0);
-		g_debug ("%zd properties for %s", g_variant_n_children (properties), priv->object_path);
+		g_debug ("%zd properties for %s", g_variant_n_children (properties),
+			 urf_device_get_object_path (URF_DEVICE (modem)));
 		g_debug ("%s", g_variant_print (properties, TRUE));
 
 		g_variant_iter_init (&iter, properties);
@@ -532,11 +528,10 @@ urf_device_ofono_new (gint index, const char *object_path)
 	UrfDeviceOfonoPrivate *priv = URF_DEVICE_OFONO_GET_PRIVATE (device);
 
 	priv->index = index;
-	priv->object_path = g_strdup (object_path);
 
-	g_debug ("new ofono device: %p for %s", device, priv->object_path);
+	g_debug ("new ofono device: %p for %s", device, object_path);
 
-        if (!urf_device_register_device (URF_DEVICE (device), interface_vtable, introspection_xml)) {
+        if (!urf_device_register_device (URF_DEVICE (device), interface_vtable, g_strdup(object_path), introspection_xml)) {
                 g_object_unref (device);
                 return NULL;
         }
@@ -545,7 +540,7 @@ urf_device_ofono_new (gint index, const char *object_path)
 	                          G_DBUS_PROXY_FLAGS_NONE,
 	                          NULL,
 	                          "org.ofono",
-	                          priv->object_path,
+	                          object_path,
 	                          "org.ofono.Modem",
 	                          priv->cancellable,
 	                          proxy_ready_cb,

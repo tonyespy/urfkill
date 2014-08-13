@@ -413,7 +413,7 @@ urf_daemon_flight_mode_cb (GObject *source,
 		g_dbus_method_invocation_return_error (priv->invocation,
 						       error->domain,
 		                                       error->code,
-		                                       error->message);
+						       "%s", error->message);
 		g_error_free (error);
 		error = NULL;
 	}
@@ -444,6 +444,16 @@ urf_daemon_flight_mode (UrfDaemon             *daemon,
 
 	if (!urf_polkit_check_auth (priv->polkit, subject, "org.freedesktop.urfkill.flight_mode", invocation))
 		goto out;
+
+	if (priv->invocation != NULL) {
+		g_warning ("%s: flightmode inprogress...", __func__);
+
+		g_dbus_method_invocation_return_error (invocation,
+						       URF_DAEMON_ERROR,
+						       URF_DAEMON_ERROR_IN_PROGRESS,
+						       "FlightMode operation already in progress");
+		return;
+	}
 
 	priv->pending_block = block;
 

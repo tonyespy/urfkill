@@ -98,10 +98,10 @@ urf_ofono_manager_remove_modem (UrfOfonoManager *ofono,
 {
 	UrfDeviceOfono *device = NULL;
 	GSList *dev = NULL;
-	gchar *path;
+	const gchar *path;
 
 	for (dev = ofono->devices; dev; dev = dev->next) {
-		path = urf_device_ofono_get_path (dev->data);
+		path = urf_device_get_object_path (URF_DEVICE (dev));
 
 		if (g_strcmp0 (path, object_path) == 0) {
 			device = dev->data;

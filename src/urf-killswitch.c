@@ -125,8 +125,6 @@ urf_killswitch_state_refresh (UrfKillswitch *killswitch)
 	GList *iter;
 	GError *error = NULL;
 
-	g_assert (URF_IS_KILLSWITCH ( killswitch ));
-
 	if (priv->devices == NULL) {
 		priv->state = KILLSWITCH_STATE_NO_ADAPTER;
 		priv->saved_state = KILLSWITCH_STATE_NO_ADAPTER;
@@ -156,12 +154,10 @@ urf_killswitch_state_refresh (UrfKillswitch *killswitch)
 	if (platform_checked)
 		new_state = aggregate_states (platform, new_state);
 
-	// AWE: this should probably be g_debug
-
-	g_message("%s: %s state: %s new_state: %s", __func__,
-		  type_to_string (priv->type),
-		  state_to_string(priv->state),
-		  state_to_string(new_state));
+	g_debug("%s: %s state: %s new_state: %s", __func__,
+		type_to_string (priv->type),
+		state_to_string(priv->state),
+		state_to_string(new_state));
 
 	/* emit a signal for change */
 	if (priv->state != new_state) {
@@ -275,6 +271,8 @@ urf_killswitch_soft_block_cb (GObject *source,
 
 	g_assert (URF_IS_DEVICE(dev->data));
 
+	g_message ("%s", __func__);  // AWE
+
 	// pending_killswich_task should be match
 	g_assert (g_task_is_valid(res, source));
 	g_assert (G_TASK(res) == G_TASK(priv->pending_device_task));
@@ -307,7 +305,7 @@ urf_killswitch_soft_block_cb (GObject *source,
 	} else {
 		dev = dev->next;
 
-		g_debug ("%s: Setting device %s to %s",
+		g_message ("%s: Setting device %s to %s",
 			 __func__,
 			 urf_device_get_object_path (URF_DEVICE (dev->data)),
 			 priv->pending_blocked ? "blocked" : "unblocked");
@@ -485,7 +483,7 @@ static const GDBusInterfaceVTable interface_vtable =
 };
 
 /**
- * urf_device_register_device:
+ * urf_device_register_switch:
  **/
 static gboolean
 urf_killswitch_register_switch (UrfKillswitch *killswitch)
@@ -494,8 +492,6 @@ urf_killswitch_register_switch (UrfKillswitch *killswitch)
 	GDBusInterfaceInfo **infos;
 	guint reg_id;
 	GError *error = NULL;
-
-	g_message ("%s", __func__);
 
 	priv->introspection_data = g_dbus_node_info_new_for_xml (introspection_xml, NULL);
 	g_assert (priv->introspection_data != NULL);

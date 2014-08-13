@@ -75,6 +75,18 @@ struct _UrfDevicePrivate {
 
 G_DEFINE_ABSTRACT_TYPE_WITH_PRIVATE (UrfDevice, urf_device, G_TYPE_OBJECT)
 
+
+/**
+ * urf_device_get_connection:
+ **/
+GDBusConnection *
+urf_device_get_connection (UrfDevice *device)
+{
+	UrfDevicePrivate *priv = URF_DEVICE_GET_PRIVATE (device);
+
+	return priv->connection;
+}
+
 /**
  * urf_device_get_index:
  **/
@@ -123,6 +135,9 @@ urf_device_get_urf_type (UrfDevice *device)
 const char *
 urf_device_get_name (UrfDevice *device)
 {
+	// AWE: why aren't these asserts? if a non-device
+	// is passed in, this code is seriously broken....
+
 	g_return_val_if_fail (URF_IS_DEVICE (device), NULL);
 
 	if (URF_GET_DEVICE_CLASS (device)->get_name)
@@ -429,7 +444,6 @@ handle_get_property (GDBusConnection *connection,
                      gpointer user_data)
 {
 	UrfDevice *device = URF_DEVICE (user_data);
-
 	GVariant *retval = NULL;
 
 	if (g_strcmp0 (property_name, "index") == 0)
@@ -456,21 +470,10 @@ static const GDBusInterfaceVTable interface_vtable =
 };
 
 /**
- * urf_device_compute_object_path:
- **/
-static char *
-urf_device_compute_object_path (UrfDevice *device)
-{
-	const char *path_template = "/org/freedesktop/URfkill/devices/%u";
-
-	return g_strdup_printf (path_template, urf_device_get_index (device));
-}
-
-/**
  * urf_device_register_device:
  **/
 gboolean
-urf_device_register_device (UrfDevice *device, const GDBusInterfaceVTable vtable, const char *xml)
+urf_device_register_device (UrfDevice *device, const GDBusInterfaceVTable vtable, char *object_path, const char *xml)
 {
 	UrfDevicePrivate *priv = URF_DEVICE_GET_PRIVATE (device);
 	GDBusInterfaceInfo **infos;
@@ -478,6 +481,8 @@ urf_device_register_device (UrfDevice *device, const GDBusInterfaceVTable vtable
 	GError *error = NULL;
 	GString *introspection_xml;
 	gchar *xml_data;
+
+	g_message("%s: object_path: %s", __func__, object_path);
 
 	introspection_xml = g_string_new ("<node>");
 	introspection_xml = g_string_append (introspection_xml, introspection_generic);
@@ -496,23 +501,34 @@ urf_device_register_device (UrfDevice *device, const GDBusInterfaceVTable vtable
 		return FALSE;
 	}
 
-	priv->object_path = urf_device_compute_object_path (device);
+	error = NULL;
+
+	priv->object_path = object_path;
 	infos = priv->introspection_data->interfaces;
+
 	reg_id = g_dbus_connection_register_object (priv->connection,
 		                                    priv->object_path,
 		                                    infos[0],
 		                                    &interface_vtable,
 		                                    device,
 		                                    NULL,
-		                                    NULL);
+		                                    &error);
+
+	if (error != NULL)
+		g_warning ("Error registering Device interface: %s", error->message);
+
 	g_assert (reg_id > 0);
+
 	reg_id = g_dbus_connection_register_object (priv->connection,
 		                                    priv->object_path,
 		                                    infos[1],
 		                                    &vtable,
 		                                    device,
 		                                    NULL,
-		                                    NULL);
+		                                    &error);
+	if (error != NULL)
+		g_warning ("Error registering Device interface: %s", error->message);
+
 	g_assert (reg_id > 0);
 
 	return TRUE;
