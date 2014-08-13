@@ -221,23 +221,28 @@ ofono_set_soft (UrfDevice *device, gboolean blocked, GTask *task)
 	UrfDeviceOfono *modem = URF_DEVICE_OFONO (device);
 	UrfDeviceOfonoPrivate *priv = URF_DEVICE_OFONO_GET_PRIVATE (modem);
 
-	g_message ("%s: Setting WWAN to %s",
-		   __func__,
-	           blocked ? "blocked" : "unblocked");
+	if (priv->proxy != NULL) {
+		g_message ("%s: Setting WWAN to %s",
+			   __func__,
+			   blocked ? "blocked" : "unblocked");
 
-	priv->soft = blocked;
-	priv->pending_block_task = task;
+		priv->soft = blocked;
+		priv->pending_block_task = task;
 
-	g_dbus_proxy_call (priv->proxy,
-	                   "SetProperty",
-	                   g_variant_new ("(sv)",
-	                                  "Online",
-                                          g_variant_new_boolean (!blocked)),
-	                   G_DBUS_CALL_FLAGS_NONE,
-	                   -1,
-	                   priv->cancellable,
-	                   (GAsyncReadyCallback) set_online_cb,
-	                   modem);
+
+		g_dbus_proxy_call (priv->proxy,
+				   "SetProperty",
+				   g_variant_new ("(sv)",
+						  "Online",
+						  g_variant_new_boolean (!blocked)),
+				   G_DBUS_CALL_FLAGS_NONE,
+				   -1,
+				   priv->cancellable,
+				   (GAsyncReadyCallback) set_online_cb,
+				   modem);
+	} else {
+		g_warning ("%s: proxy not ready yet", __func__);
+	}
 }
 
 /**
@@ -270,7 +275,7 @@ modem_signal_cb (GDBusProxy *proxy,
 		gchar *prop_name;
 		GVariant *prop_value = NULL;
 
-		g_debug ("properties changed for %s: %s",
+		g_message ("properties changed for %s: %s",
 			 urf_device_get_object_path (URF_DEVICE (modem)),
 		         g_variant_print (parameters, TRUE));
 
@@ -291,8 +296,10 @@ modem_signal_cb (GDBusProxy *proxy,
 
 			powered = g_variant_get_boolean (prop_value);
 
-			if (powered)
+			if (powered) {
+				g_message("%s: calling set_soft block: %u", __func__, priv->soft);
 				ofono_set_soft (URF_DEVICE (modem), priv->soft, NULL);
+			}
 		}
 
 		g_free (prop_name);
@@ -316,7 +323,8 @@ get_properties_cb (GObject *source_object,
 
 	if (!error) {
 		properties = g_variant_get_child_value (result, 0);
-		g_debug ("%zd properties for %s", g_variant_n_children (properties),
+		g_message ("%s %zd properties for %s", __func__,
+			   g_variant_n_children (properties),
 			 urf_device_get_object_path (URF_DEVICE (modem)));
 		g_debug ("%s", g_variant_print (properties, TRUE));
 

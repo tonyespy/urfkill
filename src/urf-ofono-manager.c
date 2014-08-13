@@ -81,6 +81,8 @@ urf_ofono_manager_add_modem (UrfOfonoManager *ofono,
 {
 	UrfDevice *device;
 
+	g_message ("%s", __func__);
+
 	device = urf_device_ofono_new (modem_idx, object_path);
 	modem_idx++;
 
