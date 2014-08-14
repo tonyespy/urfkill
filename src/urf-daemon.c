@@ -346,8 +346,11 @@ urf_daemon_is_flight_mode (UrfDaemon             *daemon,
 	UrfDaemonPrivate *priv = daemon->priv;
 	GVariant *value;
 
-	// AWE: if urfkilld starts and enables flight-mode from saved-state,
-	// then I'm pretty sure that daemon->flight_mode isn't set...
+
+	// AWE: currently this value will alway be correct, as
+	// daemon_new() initializes the state from config(ALL).
+	// however if in arbitrator_startup(), the set_flight_
+	// mode operation fails, this could get out-of-sync
 
 	value = g_variant_new ("(b)", priv->flight_mode);
 	g_dbus_method_invocation_return_value (invocation, value);
