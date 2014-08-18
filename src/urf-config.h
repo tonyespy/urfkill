@@ -70,6 +70,12 @@ void		 urf_config_set_persist_state	(UrfConfig *config,
 						 const gint type,
 						 const KillswitchState state);
 
+gboolean	 urf_config_get_prev_soft	(UrfConfig*config,
+						 const gint type);
+void		 urf_config_set_prev_soft	(UrfConfig*config,
+						 const gint type,
+						 gboolean block);
+
 G_END_DECLS
 
 #endif /* __URF_CONFIG_H__ */
