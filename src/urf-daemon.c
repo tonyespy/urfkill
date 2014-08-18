@@ -138,7 +138,9 @@ struct UrfDaemonPrivate
 	UrfOfonoManager		*ofono_manager;
 	gboolean		 key_control;
 	gboolean		 flight_mode;
-	gboolean		 pending_block;  // only needed for fake cb version...
+
+	// AWE: maek this part of FM task?
+	gboolean		 pending_block;
 	gboolean		 master_key;
 	GDBusConnection		*connection;
 	GDBusNodeInfo		*introspection_data;
@@ -436,7 +438,7 @@ urf_daemon_flight_mode (UrfDaemon             *daemon,
 	PolkitSubject *subject = NULL;
 	GTask *task;
 
-	g_message ("%s: block: '%u'", __func__, block);  // AWE
+	g_message ("%s: block: %u", __func__, block); // AWE -> g_debug
 
 	if (!urf_arbitrator_has_devices (priv->arbitrator))
 		goto out;
@@ -455,6 +457,13 @@ urf_daemon_flight_mode (UrfDaemon             *daemon,
 						       URF_DAEMON_ERROR,
 						       URF_DAEMON_ERROR_IN_PROGRESS,
 						       "FlightMode operation already in progress");
+		return;
+	}
+
+	if (priv->flight_mode == block) {
+		g_message ("%s: flight_mode == block", __func__);
+		g_dbus_method_invocation_return_value (priv->invocation,
+						       g_variant_new ("(b)", TRUE));
 		return;
 	}
 
