@@ -161,7 +161,7 @@ urf_arbitrator_set_block_idx (UrfArbitrator  *arbitrator,
  * handle_flight_mode_killswitch
  **/
 static gboolean
-handle_flight_mode_killswitch(UrfArbitrator  *arbitrator, const gboolean block)
+handle_flight_mode_killswitch (UrfArbitrator  *arbitrator, const gboolean block)
 {
 	UrfArbitratorPrivate *priv = arbitrator->priv;
 	int i = priv->block_index++;
@@ -172,13 +172,13 @@ handle_flight_mode_killswitch(UrfArbitrator  *arbitrator, const gboolean block)
 	gboolean want_state = FALSE;
 
 	if (state != KILLSWITCH_STATE_NO_ADAPTER) {
-		g_message("%s: killswitch[%s] state: %s", __func__,
-			  type_to_string(i),
-			  state_to_string(state));
+		saved_state = urf_killswitch_get_saved_state (priv->killswitch[i]);
 
-		saved_state = urf_killswitch_get_saved_state(priv->killswitch[i]);
-		g_debug("saved_state is: %s", state_to_string(saved_state));
-
+		g_message ("%s: killswitch[%s] state: %s saved_state: %s",
+			   __func__,
+			   type_to_string (i),
+			   state_to_string (state),
+			   state_to_string (saved_state));
 
 		// this updates saved before knowing that set_block worked
 		// probably not a bad thing, but again not obvious
@@ -212,7 +212,15 @@ handle_flight_mode_killswitch(UrfArbitrator  *arbitrator, const gboolean block)
 		priv->pending_block_task = g_task_new(arbitrator,
 						      NULL,
 						      urf_arbitrator_flight_mode_cb,
-						      GINT_TO_POINTER(i));
+						      GINT_TO_POINTER (i));
+
+		// for some reason, setting user_data in g_task_new () fails.
+		g_task_set_task_data (priv->pending_block_task, GINT_TO_POINTER (i), NULL);
+
+		//		g_message ("%s: pending_block_task: %p index: %d",
+		//	   __func__,
+		//			   priv->pending_block_task,
+		//			   GPOINTER_TO_INT (g_task_get_task_data (priv->pending_block_task)));
 
 		// In order to mimic the existing code, this routine needs to call
 		// the first killswitch block, and then wait for a cb.
@@ -253,13 +261,18 @@ urf_arbitrator_flight_mode_cb (GObject *source,
 
 	priv = arbitrator->priv;
 
-	g_message ("%s", __func__);  // AWE
+	g_assert (g_task_is_valid (res, source));
+	g_assert (G_TASK (res) == G_TASK (priv->pending_block_task));
 
-	g_assert (g_task_is_valid(res, source));
-	g_assert (G_TASK(res) == G_TASK(priv->pending_block_task));
+	//	g_message ("%s: pending_block_task: %p index: %d",
+	//		   __func__,
+	//		   priv->pending_block_task,
+	//		   GPOINTER_TO_INT (g_task_get_task_data (priv->pending_block_task)));
 
 	priv->pending_block_task = NULL;
-	i = GPOINTER_TO_INT(g_task_get_task_data(G_TASK (res)));
+	i = GPOINTER_TO_INT (g_task_get_task_data (G_TASK (res)));
+
+	g_message ("%s index: %d", __func__, i);  // AWE
 
 	// AWE: pointer is always NULL on success...
 	g_task_propagate_pointer(G_TASK (res), &error);
@@ -271,29 +284,17 @@ urf_arbitrator_flight_mode_cb (GObject *source,
 			g_task_return_new_error(priv->flight_mode_task,
 						error->domain, error->code,
 						"set_block failed: %s",
-						type_to_string(i));
+						type_to_string (i));
 
 		g_error_free (error);
 		error = NULL;
 
-		// AWE: want_state isn't available in the cb w/out extra work.
-		//					want_state ? "TRUE" : "FALSE");
-
 		priv->flight_mode_task = NULL;
-
-	} else if (priv->block_index == NUM_RFKILL_TYPES) {
-		g_message ("%s: block_index: %d; all done",
-			   __func__, priv->block_index);  // AWE
-
-		if (priv->flight_mode_task != NULL) {
-			g_message ("%s: firing flight_mode_task", __func__);
-
-			g_task_return_pointer (priv->flight_mode_task, NULL, NULL);
-			priv->flight_mode_task = NULL;
-		}
 	} else {
-		g_message("%s: more killswitches to process - next_idx: %d", __func__,
-			  priv->block_index);
+		g_message("%s: pending_block_task %s - SUCCESS; next_idx: %d", __func__,
+			  type_to_string (i), priv->block_index);
+
+		urf_config_set_persist_state (priv->config, i, priv->pending_block);
 
 		for (; priv->block_index < NUM_RFKILL_TYPES;)
 			if (!handle_flight_mode_killswitch(arbitrator, priv->pending_block))
@@ -303,7 +304,7 @@ urf_arbitrator_flight_mode_cb (GObject *source,
 		if (priv->pending_block_task == NULL) {
 			g_message ("%s  pending_block_task is NULL", __func__);  // AWE
 
-			if (priv->flight_mode_task) {
+			if (priv->flight_mode_task != NULL) {
 				g_task_return_pointer (priv->flight_mode_task, NULL, NULL);
 				priv->flight_mode_task = NULL;
 			}
@@ -775,7 +776,7 @@ urf_arbitrator_startup (UrfArbitrator *arbitrator,
 	GTask *task;
 	int fd;
 
-	g_message ("%s",  __func__);
+	g_message ("%s:::",  __func__);
 
 	priv->config = g_object_ref (config);
 	priv->force_sync = urf_config_get_force_sync (config);
@@ -784,7 +785,9 @@ urf_arbitrator_startup (UrfArbitrator *arbitrator,
 	fd = open("/dev/rfkill", O_RDWR | O_NONBLOCK);
 	if (fd < 0) {
 		if (errno == EACCES)
-			g_warning ("Could not open RFKILL control device, please verify your installation");
+			g_warning ("%s: Could not open RFKILL control device, please verify your installation", __func__);
+		else
+			g_warning ("%s: Error opening RFKILL control device, please verify your installation", __func__);
 	} else {
 		/* Disable rfkill input */
 		ioctl(fd, RFKILL_IOCTL_NOINPUT);
@@ -796,9 +799,14 @@ urf_arbitrator_startup (UrfArbitrator *arbitrator,
 
 			len = read(fd, &event, sizeof(event));
 			if (len < 0) {
-				if (errno == EAGAIN)
+
+				// AWE: this check makes no sense...
+				if (errno == EAGAIN) {
+					g_warning ("Reading of RFKILL events - EAGAIN");
 					break;
-				g_debug ("Reading of RFKILL events failed");
+				}
+
+				g_warning ("Reading of RFKILL events failed");
 				break;
 			}
 
@@ -807,10 +815,14 @@ urf_arbitrator_startup (UrfArbitrator *arbitrator,
 				continue;
 			}
 
-			if (event.op != RFKILL_OP_ADD)
+			if (event.op != RFKILL_OP_ADD) {
+				g_message ("event.op != OP_ADD"); // AWE: should be g_debug
 				continue;
-			if (event.type >= NUM_RFKILL_TYPES)
+			}
+			if (event.type >= NUM_RFKILL_TYPES) {
+				g_warning ("event.type >= RFKILL_TYPES"); // AWE: should be g_error
 				continue;
+			}
 
 			add_killswitch (arbitrator, event.idx, event.type, event.soft, event.hard);
 		}
@@ -828,13 +840,10 @@ urf_arbitrator_startup (UrfArbitrator *arbitrator,
 
 	/* Set initial flight mode state from persistence */
 
-	// AWE:
-	//
-	// 1. is persist only used by ubuntu?
-	//
-	// 2. this code runs before the modem has been detected!
-	//
-	// 3. FIXME - doesn't use GTask
+	// AWE this code runs before the modem has been detected, or any of the
+	// rfkill kernel devices have been added.  As such, all it does is
+	// set the ALL state from the persist state, and then does the same
+	// for all of the killswitches.
 	if (priv->persist) {
 
 		task = g_task_new(arbitrator,
