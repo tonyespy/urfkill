@@ -351,35 +351,6 @@ get_properties_cb (GObject *source_object,
 	}
 }
 
-static void
-proxy_ready_cb (GObject *source_object,
-                GAsyncResult *res,
-                gpointer user_data)
-{
-	UrfDeviceOfono *modem = URF_DEVICE_OFONO (user_data);
-	UrfDeviceOfonoPrivate *priv = URF_DEVICE_OFONO_GET_PRIVATE (modem);
-	GError *error = NULL;
-
-	priv->proxy = g_dbus_proxy_new_finish (res, &error);
-
-	if (!error) {
-		g_cancellable_reset (priv->cancellable);
-		g_signal_connect (priv->proxy, "g-signal",
-		                  G_CALLBACK (modem_signal_cb), modem);
-		g_dbus_proxy_call (priv->proxy,
-		                   "GetProperties",
-		                   NULL,
-		                   G_DBUS_CALL_FLAGS_NONE,
-		                   -1,
-		                   priv->cancellable,
-		                   (GAsyncReadyCallback) get_properties_cb,
-		                   modem);
-	} else {
-		g_warning ("Could not get oFono Modem proxy: %s",
-		           error ? error->message : "(unknown error)");
-	}
-}
-
 /**
  * get_property:
  **/
@@ -534,6 +505,7 @@ urf_device_ofono_new (gint index, const char *object_path)
 {
 	UrfDeviceOfono *device = g_object_new (URF_TYPE_DEVICE_OFONO, NULL);
 	UrfDeviceOfonoPrivate *priv = URF_DEVICE_OFONO_GET_PRIVATE (device);
+	GError *error = NULL;
 
 	priv->index = index;
 
@@ -544,15 +516,30 @@ urf_device_ofono_new (gint index, const char *object_path)
                 return NULL;
         }
 
-	g_dbus_proxy_new_for_bus (G_BUS_TYPE_SYSTEM,
-	                          G_DBUS_PROXY_FLAGS_NONE,
-	                          NULL,
-	                          "org.ofono",
-	                          object_path,
-	                          "org.ofono.Modem",
-	                          priv->cancellable,
-	                          proxy_ready_cb,
-	                          device);
+	priv->proxy = g_dbus_proxy_new_for_bus_sync (G_BUS_TYPE_SYSTEM,
+						     G_DBUS_PROXY_FLAGS_NONE,
+						     NULL,
+						     "org.ofono",
+						     object_path,
+						     "org.ofono.Modem",
+						     priv->cancellable,
+						     &error);
+	if (error == NULL) {
+		g_cancellable_reset (priv->cancellable);
+		g_signal_connect (priv->proxy, "g-signal",
+		                  G_CALLBACK (modem_signal_cb), device);
+		g_dbus_proxy_call (priv->proxy,
+		                   "GetProperties",
+		                   NULL,
+		                   G_DBUS_CALL_FLAGS_NONE,
+		                   -1,
+		                   priv->cancellable,
+		                   (GAsyncReadyCallback) get_properties_cb,
+		                   device);
+	} else {
+		g_warning ("Could not get oFono Modem proxy: %s",
+		           error ? error->message : "(unknown error)");
+	}
 
 	return URF_DEVICE (device);
 }
