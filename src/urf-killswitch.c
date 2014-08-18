@@ -59,7 +59,7 @@ struct UrfKillswitchPrivate
 	GDBusNodeInfo	 *introspection_data;
 	GTask            *set_block_task;
 	GTask            *pending_device_task;
-	gboolean          pending_blocked;
+	gboolean          pending_block;
 };
 
 G_DEFINE_TYPE (UrfKillswitch, urf_killswitch, G_TYPE_OBJECT)
@@ -271,8 +271,6 @@ urf_killswitch_soft_block_cb (GObject *source,
 
 	g_assert (URF_IS_DEVICE(dev->data));
 
-	g_message ("%s", __func__);  // AWE
-
 	// pending_killswich_task should be match
 	g_assert (g_task_is_valid(res, source));
 	g_assert (G_TASK(res) == G_TASK(priv->pending_device_task));
@@ -314,14 +312,14 @@ urf_killswitch_soft_block_cb (GObject *source,
 		g_message ("%s: Setting device %s to %s",
 			 __func__,
 			 urf_device_get_object_path (URF_DEVICE (dev->data)),
-			 priv->pending_blocked ? "blocked" : "unblocked");
+			 priv->pending_block ? "blocked" : "unblocked");
 
 		priv->pending_device_task = g_task_new(killswitch,
 						       NULL,
 						       urf_killswitch_soft_block_cb,
 						       dev);
 
-		urf_device_set_software_blocked (URF_DEVICE (dev->data), priv->pending_blocked,
+		urf_device_set_software_blocked (URF_DEVICE (dev->data), priv->pending_block,
 						 priv->pending_device_task);
 	}
 }
@@ -331,8 +329,8 @@ urf_killswitch_soft_block_cb (GObject *source,
  **/
 void
 urf_killswitch_set_software_blocked (UrfKillswitch *killswitch,
-                                     gboolean blocked,
-				     GTask          *task)
+                                     gboolean block,
+				     GTask *task)
 {
 	UrfKillswitchPrivate *priv = killswitch->priv;
 	GList *dev = priv->devices;
@@ -341,7 +339,7 @@ urf_killswitch_set_software_blocked (UrfKillswitch *killswitch,
 
 	if (dev) {
 		priv->set_block_task = task;
-		priv->pending_blocked = blocked;
+		priv->pending_block = block;
 
 		g_debug ("%s: Setting device %s to %s",
 			 __func__,
