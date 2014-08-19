@@ -145,6 +145,8 @@ AC_SUBST(WARNINGFLAGS_C)
 PKG_CHECK_MODULES(GLIB, [glib-2.0 >= 2.30.1])
 PKG_CHECK_MODULES(GIO, [gio-unix-2.0 >= 2.30.1])
 PKG_CHECK_MODULES(LIBUDEV, [libudev >= 148])
+PKG_CHECK_MODULES(HYBRIS_WIFI, [libwifi >= 0.1.0])
+PKG_CHECK_MODULES(HYBRIS_PROPS, [libandroid-properties >= 0.1.0])
 
 # XML library
 AC_CHECK_LIB(expat, XML_ParserCreate,

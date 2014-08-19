@@ -25,6 +25,8 @@
 #endif
 
 #include <errno.h>
+#include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -32,6 +34,8 @@
 #include <sys/ioctl.h>
 
 #include <glib.h>
+
+#include <hybris/properties/properties.h>
 
 #ifndef RFKILL_EVENT_SIZE_V1
 #define RFKILL_EVENT_SIZE_V1    8
@@ -44,6 +48,10 @@
 
 #include "urf-device.h"
 #include "urf-device-kernel.h"
+#include "urf-device-hybris.h"
+
+#define PROP_URFKILL_HYBRIS_WLAN    "urfkill.hybris.wlan"
+#define PROP_URFKILL_HYBRIS_WLAN_NO "0"
 
 enum {
 	DEVICE_ADDED,
@@ -66,6 +74,8 @@ struct UrfArbitratorPrivate {
 	guint		 watch_id;
 	GList		*devices; /* a GList of UrfDevice */
 	UrfKillswitch	*killswitch[NUM_RFKILL_TYPES];
+	/* WLAN devices are controlled via libhybris */
+	gboolean	hybris_wlan;
 };
 
 G_DEFINE_TYPE(UrfArbitrator, urf_arbitrator, G_TYPE_OBJECT)
@@ -464,7 +474,8 @@ add_killswitch (UrfArbitrator *arbitrator,
 		return;
 	}
 
-	g_message ("adding killswitch idx %d soft %d hard %d", index, soft, hard);
+	g_message ("adding killswitch type %d idx %d soft %d hard %d",
+		   type, index, soft, hard);
 
 	device = urf_device_kernel_new (index, type, soft, hard);
 
@@ -498,6 +509,13 @@ print_event (struct rfkill_event *event)
 		 event->soft, event->hard);
 }
 
+static inline gboolean is_hybris_type(UrfArbitrator *arbitrator, int type)
+{
+	UrfArbitratorPrivate *priv = arbitrator->priv;
+
+	return type == RFKILL_TYPE_WLAN && priv->hybris_wlan;
+}
+
 /**
  * event_cb:
  **/
@@ -521,15 +539,17 @@ event_cb (GIOChannel    *source,
 		while (status == G_IO_STATUS_NORMAL && read == sizeof(event)) {
 			print_event (&event);
 
-			soft = (event.soft > 0)?TRUE:FALSE;
-			hard = (event.hard > 0)?TRUE:FALSE;
+			if (!is_hybris_type(arbitrator, event.type)) {
+				soft = (event.soft > 0)?TRUE:FALSE;
+				hard = (event.hard > 0)?TRUE:FALSE;
 
-			if (event.op == RFKILL_OP_CHANGE) {
-				update_killswitch (arbitrator, event.idx, soft, hard);
-			} else if (event.op == RFKILL_OP_DEL) {
-				remove_killswitch (arbitrator, event.idx);
-			} else if (event.op == RFKILL_OP_ADD) {
-				add_killswitch (arbitrator, event.idx, event.type, soft, hard);
+				if (event.op == RFKILL_OP_CHANGE) {
+					update_killswitch (arbitrator, event.idx, soft, hard);
+				} else if (event.op == RFKILL_OP_DEL) {
+					remove_killswitch (arbitrator, event.idx);
+				} else if (event.op == RFKILL_OP_ADD) {
+					add_killswitch (arbitrator, event.idx, event.type, soft, hard);
+				}
 			}
 
 			status = g_io_channel_read_chars (source,
@@ -557,10 +577,21 @@ urf_arbitrator_startup (UrfArbitrator *arbitrator,
 	struct rfkill_event event;
 	int fd;
 	int i;
+	char hybris_prop[PROP_VALUE_MAX];
 
 	priv->config = g_object_ref (config);
 	priv->force_sync = urf_config_get_force_sync (config);
 	priv->persist =	urf_config_get_persist (config);
+
+	property_get (PROP_URFKILL_HYBRIS_WLAN, hybris_prop,
+			PROP_URFKILL_HYBRIS_WLAN_NO);
+
+	if (strcmp (hybris_prop, PROP_URFKILL_HYBRIS_WLAN_NO) == 0) {
+		priv->hybris_wlan = FALSE;
+	} else {
+		g_message ("Using hybris for WLAN devices");
+		priv->hybris_wlan = TRUE;
+	}
 
 	fd = open("/dev/rfkill", O_RDWR | O_NONBLOCK);
 	if (fd < 0) {
@@ -592,6 +623,8 @@ urf_arbitrator_startup (UrfArbitrator *arbitrator,
 				continue;
 			if (event.type >= NUM_RFKILL_TYPES)
 				continue;
+			if (is_hybris_type(arbitrator, event.type))
+				continue;
 
 			add_killswitch (arbitrator, event.idx, event.type, event.soft, event.hard);
 		}
@@ -603,6 +636,13 @@ urf_arbitrator_startup (UrfArbitrator *arbitrator,
 		                                 G_IO_IN | G_IO_HUP | G_IO_ERR,
 		                                 (GIOFunc) event_cb,
 		                                 arbitrator);
+	}
+
+	if (priv->hybris_wlan) {
+		UrfDevice *device;
+
+		device = urf_device_hybris_new ();
+		urf_arbitrator_add_device (arbitrator, device);
 	}
 
 	/* Set initial flight mode state from persistence */
@@ -646,7 +686,6 @@ static void
 urf_arbitrator_dispose (GObject *object)
 {
 	UrfArbitratorPrivate *priv = URF_ARBITRATOR_GET_PRIVATE (object);
-	KillswitchState state;
 	int i;
 
 	for (i = 0; i < NUM_RFKILL_TYPES; i++) {
