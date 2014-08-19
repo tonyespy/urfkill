@@ -82,7 +82,7 @@ void     		 urf_arbitrator_set_block		(UrfArbitrator	*arbitrator,
 gboolean		 urf_arbitrator_set_block_idx		(UrfArbitrator	*arbitrator,
 								 const gint	 index,
 								 const gboolean	 block);
-void		         urf_arbitrator_set_flight_mode		(UrfArbitrator	*arbitrator,
+void		         urf_arbitrator_flight_mode		(UrfArbitrator	*arbitrator,
 								 const gboolean	 block,
 								 GTask          *task);
 KillswitchState		 urf_arbitrator_get_state		(UrfArbitrator	*arbitrator,

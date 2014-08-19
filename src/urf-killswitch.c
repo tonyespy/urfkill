@@ -279,6 +279,8 @@ urf_killswitch_soft_block_cb (GObject *source,
 	// AWE: pointer is always NULL on success...
 	g_task_propagate_pointer(G_TASK (res), &error);
 
+	// AWE: g_object_unref (G_TASK (res));
+
 	if (error != NULL) {
 		g_message ("%s *error != NULL (Failed)", __func__);  // AWE
 
@@ -304,6 +306,7 @@ urf_killswitch_soft_block_cb (GObject *source,
 		if (priv->set_block_task) {
 			g_message ("%s: firing set_block_task OK", __func__);  // AWE
 			g_task_return_pointer (priv->set_block_task, NULL, NULL);
+
 			priv->set_block_task = NULL;
 		}
 	} else {

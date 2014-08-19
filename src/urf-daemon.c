@@ -377,18 +377,16 @@ urf_daemon_flight_mode_cb (GObject *source,
 
 	g_assert (g_task_is_valid(res, source));
 
-	g_message ("%s", __func__);  // AWE
+	g_debug ("%s", __func__);
 
 	priv = daemon->priv;
 
-	// does any of this occur if flight-mode is auto-enabled at startup due to
-	// persistent state???
-
-	// AWE: pointer is always NULL on success...
 	g_task_propagate_pointer(G_TASK (res), &error);
 
+	// AWE: g_object_unref (G_TASK (res));
+
 	if (error == NULL) {
-		g_message ("%s *error == NULL (Success)", __func__);  // AWE
+		g_debug ("%s: success", __func__);
 
 		priv->flight_mode = priv->pending_block;
 		urf_config_set_persist_state (priv->config, RFKILL_TYPE_ALL,
@@ -413,7 +411,8 @@ urf_daemon_flight_mode_cb (GObject *source,
 						       g_variant_new ("(b)", TRUE));
 
 	} else {
-		g_warning ("Failed to set device flight mode to %s", priv->pending_block ? "blocked" : "unblocked");
+		g_warning ("%s: failed to set device flight mode to %s", __func__,
+			   priv->pending_block ? "blocked" : "unblocked");
 
 		g_dbus_method_invocation_return_error (priv->invocation,
 						       error->domain,
@@ -478,7 +477,7 @@ urf_daemon_flight_mode (UrfDaemon             *daemon,
 	// AWE: can g_task_new return NULL???  assume not
 	g_assert (task != NULL);
 
-	urf_arbitrator_set_flight_mode (priv->arbitrator, block, task);
+	urf_arbitrator_flight_mode (priv->arbitrator, block, task);
 
 out:
 	if (subject != NULL)
@@ -984,12 +983,17 @@ urf_daemon_dispose (GObject *object)
 		priv->config = NULL;
 	}
 
+	if (priv->introspection_data) {
+		g_dbus_node_info_unref(priv->introspection_data);
+		priv->introspection_data = NULL;
+	}
+
 	G_OBJECT_CLASS (urf_daemon_parent_class)->dispose (object);
 }
 
 /**
  * urf_daemon_new:
- **/
+**/
 UrfDaemon *
 urf_daemon_new (UrfConfig *config)
 {
