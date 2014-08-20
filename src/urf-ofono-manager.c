@@ -81,6 +81,8 @@ urf_ofono_manager_add_modem (UrfOfonoManager *ofono,
 {
 	UrfDevice *device;
 
+	g_debug ("Adding modem: %s", object_path);
+
 	device = urf_device_ofono_new (modem_idx, object_path);
 	modem_idx++;
 
@@ -98,10 +100,10 @@ urf_ofono_manager_remove_modem (UrfOfonoManager *ofono,
 {
 	UrfDeviceOfono *device = NULL;
 	GSList *dev = NULL;
-	gchar *path;
+	const gchar *path;
 
 	for (dev = ofono->devices; dev; dev = dev->next) {
-		path = urf_device_ofono_get_path (dev->data);
+		path = urf_device_ofono_get_modem_path ( URF_DEVICE_OFONO (dev));
 
 		if (g_strcmp0 (path, object_path) == 0) {
 			device = dev->data;
@@ -207,7 +209,7 @@ on_ofono_appeared (GDBusConnection *connection,
 {
 	UrfOfonoManager *ofono = user_data;
 
-	g_debug("oFono appeared on the bus");
+	g_debug ("oFono appeared on the bus");
 
 	g_cancellable_reset (ofono->cancellable);
 	g_dbus_proxy_new (connection,
