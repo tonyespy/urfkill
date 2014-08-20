@@ -106,6 +106,9 @@ static const char introspection_xml[] =
 static const GDBusErrorEntry urf_daemon_error_entries[] =
 {
 	{URF_DAEMON_ERROR_GENERAL, "org.freedesktop.URfkill.Daemon.Error.General"},
+	{URF_DAEMON_ERROR_IN_PROGRESS, "org.freedesktop.URfkill.Daemon.Error.InProgress"},
+	{URF_DAEMON_ERROR_EMERGENCY, "org.freedesktop.URfkill.Daemon.Error.Emergency"},
+	{URF_DAEMON_ERROR_INVALID, "org.freedesktop.URfkill.Daemon.Error.Invalid"},
 };
 
 enum
@@ -138,8 +141,6 @@ struct UrfDaemonPrivate
 	UrfOfonoManager		*ofono_manager;
 	gboolean		 key_control;
 	gboolean		 flight_mode;
-
-	// AWE: maek this part of FM task?
 	gboolean		 pending_block;
 	gboolean		 master_key;
 	GDBusConnection		*connection;
@@ -212,8 +213,6 @@ urf_daemon_input_event_cb (UrfInput *input,
 	if (priv->master_key)
 		type = RFKILL_TYPE_ALL;
 
-
-	// AWE/FIXME
 	urf_arbitrator_set_block (arbitrator, type, block, NULL);
 out:
 	g_signal_emit (daemon, signals[SIGNAL_URFKEY_PRESSED], 0, code);
@@ -231,9 +230,57 @@ out:
 }
 
 /**
+ * block_cb:
+ **/
+static void
+block_cb (GObject *source,
+	  GAsyncResult *res,
+	  gpointer user_data)
+{
+	UrfDaemon        *daemon;
+	UrfDaemonPrivate *priv;
+	GError           *error = NULL;
+	gint              type;
+
+	g_assert (URF_IS_DAEMON (source));
+	daemon = URF_DAEMON(source);
+
+	g_assert (g_task_is_valid (res, source));
+
+	g_debug ("%s", __func__);
+
+	priv = daemon->priv;
+
+	type = GPOINTER_TO_INT (g_task_get_task_data (G_TASK (res)));
+
+	g_task_propagate_pointer(G_TASK (res), &error);
+	g_object_unref (G_TASK (res));
+
+	if (error == NULL) {
+		g_debug ("%s: success", __func__);
+
+		g_dbus_method_invocation_return_value (priv->invocation,
+						       g_variant_new ("(b)", TRUE));
+	} else {
+		g_warning ("%s: failed to set type %s to block %s", __func__,
+			   type_to_string (type),
+			   priv->pending_block ? "blocked" : "unblocked");
+
+		g_dbus_method_invocation_return_error (priv->invocation,
+						       error->domain,
+		                                       error->code,
+						       "%s", error->message);
+		g_error_free (error);
+		error = NULL;
+	}
+
+	priv->invocation = NULL;
+}
+
+/**
  * urf_daemon_block:
  **/
-gboolean
+void
 urf_daemon_block (UrfDaemon             *daemon,
 		  const gint             type,
 		  const gboolean         block,
@@ -241,7 +288,8 @@ urf_daemon_block (UrfDaemon             *daemon,
 {
 	UrfDaemonPrivate *priv = daemon->priv;
 	PolkitSubject *subject = NULL;
-	gboolean ret = FALSE;
+	KillswitchState state;
+	GTask *task;
 
 	g_message ("%s", __func__);
 
@@ -257,22 +305,109 @@ urf_daemon_block (UrfDaemon             *daemon,
 	if (!urf_polkit_check_auth (priv->polkit, subject, "org.freedesktop.urfkill.block", invocation))
 		goto out;
 
-	// AWE/FIXME - this method needs to be asynchronous too!!!
-	urf_arbitrator_set_block (priv->arbitrator, type, block, NULL);
+	if (type < 0 || type >= NUM_RFKILL_TYPES) {
+		g_warning ("%s: invalid type specified %d", __func__, type);
 
-	g_dbus_method_invocation_return_value (invocation,
-	                                       g_variant_new ("(b)", ret));
+		g_dbus_method_invocation_return_error (invocation,
+						       URF_DAEMON_ERROR,
+						       URF_DAEMON_ERROR_INVALID,
+						       "invalid type: %d", type);
+		return;
+	}
+
+	if (priv->invocation != NULL) {
+		g_warning ("%s: operation already inprogress...", __func__);
+
+		g_dbus_method_invocation_return_error (invocation,
+						       URF_DAEMON_ERROR,
+						       URF_DAEMON_ERROR_IN_PROGRESS,
+						       "operation already in progress");
+		return;
+	}
+
+	state = urf_arbitrator_get_state (priv->arbitrator, type);
+
+	if ((block && state == KILLSWITCH_STATE_SOFT_BLOCKED) ||
+	    (!block && state == KILLSWITCH_STATE_UNBLOCKED)) {
+		g_debug ("%s: block == current state", __func__);
+
+		g_dbus_method_invocation_return_value (priv->invocation,
+						       g_variant_new ("(b)", TRUE));
+		return;
+	}
+
+	priv->pending_block = block;
+	priv->invocation = invocation;
+
+	task = g_task_new (daemon, NULL, block_cb, NULL);
+	g_task_set_task_data (task, GINT_TO_POINTER (type), NULL);
+
+	urf_arbitrator_set_block (priv->arbitrator, type, block, task);
+
 out:
 	if (subject != NULL)
 		g_object_unref (subject);
 
-	return TRUE;
+}
+
+/**
+ * block_idx_cb:
+ **/
+static void
+block_idx_cb (GObject *source,
+	      GAsyncResult *res,
+	      gpointer user_data)
+{
+	UrfDaemon        *daemon;
+	UrfDaemonPrivate *priv;
+	UrfDevice        *device;
+	GError           *error = NULL;
+	gint              index;
+
+	g_assert (URF_IS_DAEMON (source));
+	daemon = URF_DAEMON(source);
+
+	g_assert (g_task_is_valid (res, source));
+
+	g_debug ("%s", __func__);
+
+	priv = daemon->priv;
+
+	index = GPOINTER_TO_INT (g_task_get_task_data (G_TASK (res)));
+	device = urf_arbitrator_get_device (priv->arbitrator, index);
+
+	g_assert (device);
+
+	g_task_propagate_pointer(G_TASK (res), &error);
+	g_object_unref (G_TASK (res));
+
+	if (error == NULL) {
+		g_debug ("%s: success", __func__);
+
+		g_dbus_method_invocation_return_value (priv->invocation,
+						       g_variant_new ("(b)", TRUE));
+	} else {
+		g_warning ("%s: failed device %u (%s) to %s",
+			   __func__,
+                           index,
+                           type_to_string (urf_device_get_device_type (device)),
+                           priv->pending_block ? "blocked" : "unblocked");
+
+		g_dbus_method_invocation_return_error (priv->invocation,
+						       error->domain,
+		                                       error->code,
+						       "%s", error->message);
+		g_error_free (error);
+		error = NULL;
+	}
+
+	priv->invocation = NULL;
 }
 
 /**
  * urf_daemon_block_idx:
  **/
-gboolean
+void
 urf_daemon_block_idx (UrfDaemon             *daemon,
 		      const gint             index,
 		      const gboolean         block,
@@ -280,9 +415,9 @@ urf_daemon_block_idx (UrfDaemon             *daemon,
 {
 	UrfDaemonPrivate *priv = daemon->priv;
 	PolkitSubject *subject = NULL;
+	KillswitchState state;
+	GTask *task;
 	gboolean ret = FALSE;
-
-	g_return_val_if_fail (index >= 0, FALSE);
 
 	if (!urf_arbitrator_has_devices (priv->arbitrator))
 		goto out;
@@ -294,15 +429,47 @@ urf_daemon_block_idx (UrfDaemon             *daemon,
 	if (!urf_polkit_check_auth (priv->polkit, subject, "org.freedesktop.urfkill.blockidx", invocation))
 		goto out;
 
-	ret = urf_arbitrator_set_block_idx (priv->arbitrator, index, block);
+	if (index < 0 || !urf_arbitrator_get_device (priv->arbitrator, index)) {
+		g_warning ("%s: invalid index specified %d", __func__, index);
+
+		g_dbus_method_invocation_return_error (invocation,
+						       URF_DAEMON_ERROR,
+						       URF_DAEMON_ERROR_INVALID,
+						       "invalid index: %d", index);
+		return;
+	}
+
+	if (priv->invocation != NULL) {
+		g_warning ("%s: operation already inprogress...", __func__);
+
+		g_dbus_method_invocation_return_error (invocation,
+						       URF_DAEMON_ERROR,
+						       URF_DAEMON_ERROR_IN_PROGRESS,
+						       "operation already in progress");
+		return;
+	}
+
+	state = urf_arbitrator_get_state_idx (priv->arbitrator, index);
+
+	if ((block && state == KILLSWITCH_STATE_SOFT_BLOCKED) ||
+	    (!block && state == KILLSWITCH_STATE_UNBLOCKED)) {
+		g_debug ("%s: block == current state", __func__);
+
+		g_dbus_method_invocation_return_value (priv->invocation,
+						       g_variant_new ("(b)", TRUE));
+		return;
+	}
+
+	task = g_task_new (daemon, NULL, block_idx_cb, NULL);
+	g_task_set_task_data (task, GINT_TO_POINTER (index), NULL);
+
+	urf_arbitrator_set_block_idx (priv->arbitrator, index, block, task);
 
 	g_dbus_method_invocation_return_value (invocation,
 	                                       g_variant_new ("(b)", ret));
 out:
 	if (subject != NULL)
 		g_object_unref (subject);
-
-	return ret;
 }
 
 /**
@@ -348,12 +515,6 @@ urf_daemon_is_flight_mode (UrfDaemon             *daemon,
 	UrfDaemonPrivate *priv = daemon->priv;
 	GVariant *value;
 
-
-	// AWE: currently this value will alway be correct, as
-	// daemon_new() initializes the state from config(ALL).
-	// however if in arbitrator_startup(), the set_flight_
-	// mode operation fails, this could get out-of-sync
-
 	value = g_variant_new ("(b)", priv->flight_mode);
 	g_dbus_method_invocation_return_value (invocation, value);
 
@@ -361,12 +522,12 @@ urf_daemon_is_flight_mode (UrfDaemon             *daemon,
 }
 
 /**
- * urf_daemon_flight_mode_cb:
+ * flight_mode_cb:
  **/
-void
-urf_daemon_flight_mode_cb (GObject *source,
-			   GAsyncResult *res,
-			   gpointer user_data)
+static void
+flight_mode_cb (GObject *source,
+		GAsyncResult *res,
+		gpointer user_data)
 {
 	UrfDaemon        *daemon;
 	UrfDaemonPrivate *priv;
@@ -375,15 +536,14 @@ urf_daemon_flight_mode_cb (GObject *source,
 	g_assert (URF_IS_DAEMON (source));
 	daemon = URF_DAEMON(source);
 
-	g_assert (g_task_is_valid(res, source));
+	g_assert (g_task_is_valid (res, source));
 
 	g_debug ("%s", __func__);
 
 	priv = daemon->priv;
 
-	g_task_propagate_pointer(G_TASK (res), &error);
-
-	// AWE: g_object_unref (G_TASK (res));
+	g_task_propagate_pointer (G_TASK (res), &error);
+	g_object_unref (G_TASK (res));
 
 	if (error == NULL) {
 		g_debug ("%s: success", __func__);
@@ -450,32 +610,27 @@ urf_daemon_flight_mode (UrfDaemon             *daemon,
 		goto out;
 
 	if (priv->invocation != NULL) {
-		g_warning ("%s: flightmode inprogress...", __func__);
+		g_warning ("%s: operation already inprogress...", __func__);
 
 		g_dbus_method_invocation_return_error (invocation,
 						       URF_DAEMON_ERROR,
 						       URF_DAEMON_ERROR_IN_PROGRESS,
-						       "FlightMode operation already in progress");
+						       "operation already in progress");
 		return;
 	}
 
 	if (priv->flight_mode == block) {
-		g_message ("%s: flight_mode == block", __func__);
+		g_debug ("%s: flight_mode == block", __func__);
+
 		g_dbus_method_invocation_return_value (priv->invocation,
 						       g_variant_new ("(b)", TRUE));
 		return;
 	}
 
 	priv->pending_block = block;
-
-	// AWE/FIXME: need better name...
 	priv->invocation = invocation;
 
-	// FIXME: how is task cleaned up???
-	task = g_task_new(daemon, NULL, urf_daemon_flight_mode_cb, NULL);
-
-	// AWE: can g_task_new return NULL???  assume not
-	g_assert (task != NULL);
+	task = g_task_new (daemon, NULL, flight_mode_cb, NULL);
 
 	urf_arbitrator_flight_mode (priv->arbitrator, block, task);
 
@@ -871,7 +1026,7 @@ urf_daemon_error_quark (void)
 	                                     &quark_volatile,
 	                                     urf_daemon_error_entries,
 	                                     G_N_ELEMENTS (urf_daemon_error_entries));
-	G_STATIC_ASSERT (G_N_ELEMENTS (urf_daemon_error_entries) - 1 == URF_DAEMON_ERROR_GENERAL);
+	G_STATIC_ASSERT (G_N_ELEMENTS (urf_daemon_error_entries) - 1 == URF_DAEMON_ERROR_INVALID);
 	return (GQuark)quark_volatile;
 }
 

@@ -60,7 +60,7 @@ static int signals[LAST_SIGNAL] = { 0 };
                                 URF_TYPE_ARBITRATOR, UrfArbitratorPrivate))
 
 struct fm_task_data {
-	gboolean initial_state[NUM_RFKILL_TYPES];
+	KillswitchState initial_state[NUM_RFKILL_TYPES];
 	gboolean final_state[NUM_RFKILL_TYPES];
 };
 
@@ -119,8 +119,8 @@ urf_arbitrator_set_block (UrfArbitrator  *arbitrator,
 {
 	UrfArbitratorPrivate *priv = arbitrator->priv;
 
-	g_return_val_if_fail (type >= 0, FALSE);
-	g_return_val_if_fail (type < NUM_RFKILL_TYPES, FALSE);
+	g_assert (type >= 0);
+	g_assert (type < NUM_RFKILL_TYPES);
 
 	g_message ("%s: Setting %s devices to %s",
 		   __func__,
@@ -133,15 +133,15 @@ urf_arbitrator_set_block (UrfArbitrator  *arbitrator,
 /**
  * urf_arbitrator_set_block_idx:
  **/
-gboolean
+void
 urf_arbitrator_set_block_idx (UrfArbitrator  *arbitrator,
 			      const gint      index,
-			      const gboolean  block)
+			      const gboolean  block,
+			      GTask          *task)
 {
 	UrfDevice *device;
-	gboolean result = FALSE;
 
-	g_return_val_if_fail (index >= 0, FALSE);
+	g_assert (index >= 0);
 
 	device = urf_arbitrator_find_device (arbitrator, index);
 
@@ -152,13 +152,10 @@ urf_arbitrator_set_block_idx (UrfArbitrator  *arbitrator,
                            type_to_string (urf_device_get_device_type (device)),
                            block ? "blocked" : "unblocked");
 
-		// AWE: fix
-		urf_device_set_software_blocked (device, block, NULL);
+		urf_device_set_software_blocked (device, block, task);
 	} else {
 		g_warning ("Block index: No device with index %u", index);
 	}
-
-	return result;
 }
 
 /**
@@ -170,7 +167,6 @@ handle_flight_mode_killswitch (UrfArbitrator  *arbitrator, const gboolean block)
 	UrfArbitratorPrivate *priv = arbitrator->priv;
 	int i = priv->block_index++;
 	struct fm_task_data *fm_data;
-	gboolean prev_soft;
 
 	g_assert (priv->flight_mode_task);
 
@@ -180,20 +176,15 @@ handle_flight_mode_killswitch (UrfArbitrator  *arbitrator, const gboolean block)
 
 	if (fm_data->initial_state[i] != KILLSWITCH_STATE_NO_ADAPTER) {
 
-		if (block) {
+		if (block || urf_config_get_prev_soft (priv->config, i))
 			fm_data->final_state[i] = TRUE;
-		} else {
-			prev_soft = urf_config_get_prev_soft (priv->config, i);
+		else
+			fm_data->final_state[i] = FALSE;
 
-			if (prev_soft && fm_data->initial_state[i])
-				fm_data->final_state[i] = TRUE;
-			else
-				fm_data->final_state[i] = FALSE;
-		}
-
-		g_debug ("calling set_block %s %s",
-			 type_to_string(i),
-			 fm_data->final_state[i] ? "TRUE" : "FALSE");
+		g_message("%s: killswitch[%s] state: %s block: %u", __func__,
+			  type_to_string (i),
+			  state_to_string (fm_data->initial_state[i]),
+			  fm_data->final_state[i]);
 
 		// FIXME: how is task cleaned up???
 		priv->pending_block_task = g_task_new(arbitrator,
@@ -250,20 +241,18 @@ urf_arbitrator_flight_mode_cb (GObject *source,
 	priv->pending_block_task = NULL;
 	i = GPOINTER_TO_INT (g_task_get_task_data (G_TASK (res)));
 
-	g_debug ("%s index: %d", __func__, i);  // AWE
+	g_debug ("%s index: %d", __func__, i);
 
 	g_task_propagate_pointer (G_TASK (res), &error);
-
-	// AWE: g_object_unref (G_TASK (res));
+	g_object_unref (G_TASK (res));
 
 	g_assert (priv->flight_mode_task != NULL);
-
 	fm_data = g_task_get_task_data (priv->flight_mode_task);
 
 	g_assert (fm_data != NULL);
 
 	if (error != NULL) {
-		g_message ("%s *error != NULL (Failed)", __func__);  // AWE
+		g_message ("%s *error != NULL (Failed)", __func__);
 
 		/*
 		 * If an error occurs for a single killswitch then use
@@ -297,13 +286,16 @@ urf_arbitrator_flight_mode_cb (GObject *source,
 
 		/* trigger flight_mode task if all killswitches have been processed */
 		if (priv->pending_block_task == NULL) {
-			gboolean prev_soft = FALSE;
+			gboolean prev_soft;
 
 			g_message ("%s: flight-mode operation succeeded", __func__);
 
 			for (i = RFKILL_TYPE_ALL + 1; i < NUM_RFKILL_TYPES; i++) {
-				if (priv->pending_block)
-					prev_soft = fm_data->initial_state[i];
+				if (priv->pending_block &&
+				    fm_data->initial_state[i] == KILLSWITCH_STATE_SOFT_BLOCKED)
+					prev_soft = TRUE;
+				else
+					prev_soft = FALSE;
 
 				urf_config_set_prev_soft (priv->config, i, prev_soft);
 
@@ -444,7 +436,7 @@ urf_arbitrator_add_device (UrfArbitrator *arbitrator, UrfDevice *device)
 	urf_killswitch_add_device (priv->killswitch[type], device);
 
 	if (priv->force_sync && !urf_device_is_platform (device)) {
-		urf_arbitrator_set_block_idx (arbitrator, index, soft);
+		urf_arbitrator_set_block_idx (arbitrator, index, soft, NULL);
 	}
 
 	if (priv->persist) {
@@ -456,7 +448,7 @@ urf_arbitrator_add_device (UrfArbitrator *arbitrator, UrfDevice *device)
 		 * to the persistence file.
 		 */
 		soft = urf_config_get_persist_state (priv->config, type);
-		urf_arbitrator_set_block_idx (arbitrator, index, soft);
+		urf_arbitrator_set_block_idx (arbitrator, index, soft, NULL);
 	}
 
 	g_signal_emit (G_OBJECT (arbitrator), signals[DEVICE_ADDED], 0,
@@ -570,9 +562,9 @@ update_killswitch (UrfArbitrator *arbitrator,
 
 			//  kernel-specific...
 			if (hard == TRUE && soft == FALSE)
-				urf_arbitrator_set_block_idx (arbitrator, index, TRUE);
+				urf_arbitrator_set_block_idx (arbitrator, index, TRUE, NULL);
 			else if (hard != old_hard && hard == FALSE)
-				urf_arbitrator_set_block_idx (arbitrator, index, FALSE);
+				urf_arbitrator_set_block_idx (arbitrator, index, FALSE, NULL);
 		}
 	}
 }
@@ -788,7 +780,7 @@ urf_arbitrator_startup (UrfArbitrator *arbitrator,
 		/* Set all the devices that had saved state to what was saved */
 		for (i = RFKILL_TYPE_ALL + 1; i < NUM_RFKILL_TYPES; i++)
 
-			// AWE: for now ignore callback for startup sequence...
+			/* no callback for startup sequence */
 			urf_arbitrator_set_block (arbitrator, i, urf_config_get_persist_state (config, i), NULL);
 	}
 

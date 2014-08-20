@@ -79,9 +79,10 @@ void     		 urf_arbitrator_set_block		(UrfArbitrator	*arbitrator,
 								 const gint	 type,
 								 const gboolean	 block,
 								 GTask          *task);
-gboolean		 urf_arbitrator_set_block_idx		(UrfArbitrator	*arbitrator,
+void			 urf_arbitrator_set_block_idx		(UrfArbitrator	*arbitrator,
 								 const gint	 index,
-								 const gboolean	 block);
+								 const gboolean	 block,
+								 GTask		*task);
 void		         urf_arbitrator_flight_mode		(UrfArbitrator	*arbitrator,
 								 const gboolean	 block,
 								 GTask          *task);

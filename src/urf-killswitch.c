@@ -276,19 +276,15 @@ urf_killswitch_soft_block_cb (GObject *source,
 	g_assert (G_TASK(res) == G_TASK(priv->pending_device_task));
 	priv->pending_device_task = NULL;
 
-	// AWE: pointer is always NULL on success...
 	g_task_propagate_pointer(G_TASK (res), &error);
-
-	// AWE: g_object_unref (G_TASK (res));
+	g_object_unref (G_TASK (res));
 
 	if (error != NULL) {
 		g_message ("%s *error != NULL (Failed)", __func__);  // AWE
 
-		// AWE: want_state isn't available in the cb w/out extra work.
-		//					want_state ? "TRUE" : "FALSE");
-
 		if (priv->set_block_task) {
 			g_message ("%s: returning new error: %s", __func__, error->message);  // AWE
+
 			g_task_return_new_error(priv->set_block_task,
 						error->domain, error->code,
 						"set_block failed: %s",
@@ -305,8 +301,8 @@ urf_killswitch_soft_block_cb (GObject *source,
 
 		if (priv->set_block_task) {
 			g_message ("%s: firing set_block_task OK", __func__);  // AWE
-			g_task_return_pointer (priv->set_block_task, NULL, NULL);
 
+			g_task_return_pointer (priv->set_block_task, NULL, NULL);
 			priv->set_block_task = NULL;
 		}
 	} else {
@@ -347,14 +343,14 @@ urf_killswitch_set_software_blocked (UrfKillswitch *killswitch,
 		g_debug ("%s: Setting device %s to %s",
 			 __func__,
 			 urf_device_get_object_path (URF_DEVICE (dev->data)),
-			 blocked ? "blocked" : "unblocked");
+			 block ? "block" : "unblock");
 
 		priv->pending_device_task = g_task_new(killswitch,
 						       NULL,
 						       urf_killswitch_soft_block_cb,
 						       dev);
 
-		urf_device_set_software_blocked (URF_DEVICE (dev->data), blocked,
+		urf_device_set_software_blocked (URF_DEVICE (dev->data), block,
 						 priv->pending_device_task);
 	} else {
 		g_message ("%s: no devices for %s", __func__, type_to_string (priv->type));
