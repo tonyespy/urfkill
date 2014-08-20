@@ -52,6 +52,9 @@ typedef struct
 typedef enum
 {
 	URF_DAEMON_ERROR_GENERAL,
+	URF_DAEMON_ERROR_IN_PROGRESS,
+	URF_DAEMON_ERROR_EMERGENCY,
+	URF_DAEMON_ERROR_INVALID,
 } UrfDaemonError;
 
 #define URF_DAEMON_ERROR urf_daemon_error_quark ()
@@ -61,11 +64,11 @@ GType		 urf_daemon_get_type		(void);
 UrfDaemon	*urf_daemon_new			(UrfConfig		*config);
 
 gboolean	 urf_daemon_startup		(UrfDaemon		*daemon);
-gboolean	 urf_daemon_block		(UrfDaemon		*daemon,
+void		 urf_daemon_block		(UrfDaemon		*daemon,
 						 const gint		 type,
 						 const gboolean		 block,
 						 GDBusMethodInvocation  *invocation);
-gboolean	 urf_daemon_block_idx		(UrfDaemon		*daemon,
+void		 urf_daemon_block_idx		(UrfDaemon		*daemon,
 						 const gint		 index,
 						 const gboolean		 block,
 						 GDBusMethodInvocation  *invocation);
@@ -73,7 +76,7 @@ gboolean	 urf_daemon_enumerate_devices	(UrfDaemon		*daemon,
 						 GDBusMethodInvocation  *invocation);
 gboolean	 urf_daemon_is_flight_mode	(UrfDaemon		*daemon,
 						 GDBusMethodInvocation  *invocation);
-gboolean	 urf_daemon_flight_mode	        (UrfDaemon		*daemon,
+void     	 urf_daemon_flight_mode	        (UrfDaemon		*daemon,
 						 const gboolean		 block,
 						 GDBusMethodInvocation  *invocation);
 gboolean	 urf_daemon_is_inhibited	(UrfDaemon		*daemon,
