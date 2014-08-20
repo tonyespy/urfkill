@@ -139,13 +139,13 @@ state_to_string (KillswitchState state)
 {
 	switch (state) {
 	case KILLSWITCH_STATE_NO_ADAPTER:
-		return "KILLSWITCH_STATE_NO_ADAPTER";
+		return "NO_ADAPTER";
 	case KILLSWITCH_STATE_SOFT_BLOCKED:
-		return "KILLSWITCH_STATE_SOFT_BLOCKED";
+		return "SOFT_BLOCKED";
 	case KILLSWITCH_STATE_UNBLOCKED:
-		return "KILLSWITCH_STATE_UNBLOCKED";
+		return "UNBLOCKED";
 	case KILLSWITCH_STATE_HARD_BLOCKED:
-		return "KILLSWITCH_STATE_HARD_BLOCKED";
+		return "HARD_BLOCKED";
 	default:
 		g_assert_not_reached ();
 	}
