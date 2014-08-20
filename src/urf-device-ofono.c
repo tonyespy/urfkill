@@ -55,8 +55,8 @@ enum
 
 struct _UrfDeviceOfonoPrivate {
 	gint index;
-	char *object_path;
 	char *name;
+	char *modem_path;
 
 	GHashTable *properties;
 	gboolean soft;
@@ -83,14 +83,17 @@ urf_device_ofono_update_states (UrfDeviceOfono      *device,
 	return TRUE;
 }
 
+/**
+ * urf_device_ofono_get_modem_path:
+ **/
 gchar *
-urf_device_ofono_get_path (UrfDeviceOfono *ofono)
+urf_device_ofono_get_modem_path (UrfDeviceOfono *ofono)
 {
 	UrfDeviceOfonoPrivate *priv = URF_DEVICE_OFONO_GET_PRIVATE (ofono);
 
 	g_return_val_if_fail (URF_IS_DEVICE_OFONO (ofono), NULL);
 
-	return g_strdup(priv->object_path);
+	return g_strdup(priv->modem_path);
 }
 
 /**
@@ -251,7 +254,7 @@ modem_signal_cb (GDBusProxy *proxy,
 		GVariant *prop_value = NULL;
 
 		g_debug ("properties changed for %s: %s",
-		         priv->object_path,
+			 priv->modem_path,
 		         g_variant_print (parameters, TRUE));
 
 		g_variant_get_child (parameters, 0, "s", &prop_name);
@@ -296,7 +299,8 @@ get_properties_cb (GObject *source_object,
 
 	if (!error) {
 		properties = g_variant_get_child_value (result, 0);
-		g_debug ("%zd properties for %s", g_variant_n_children (properties), priv->object_path);
+		g_debug ("%zd properties for %s", g_variant_n_children (properties),
+			 priv->modem_path);
 		g_debug ("%s", g_variant_print (properties, TRUE));
 
 		g_variant_iter_init (&iter, properties);
@@ -408,6 +412,13 @@ constructor (GType type,
 static void
 dispose (GObject *object)
 {
+	UrfDeviceOfonoPrivate *priv = URF_DEVICE_OFONO_GET_PRIVATE (object);
+
+	if (priv->modem_path) {
+		g_free (priv->modem_path);
+		priv->modem_path = NULL;
+	}
+
 	G_OBJECT_CLASS(urf_device_ofono_parent_class)->dispose(object);
 }
 
@@ -507,20 +518,21 @@ urf_device_ofono_new (gint index, const char *object_path)
 	UrfDeviceOfonoPrivate *priv = URF_DEVICE_OFONO_GET_PRIVATE (device);
 
 	priv->index = index;
-	priv->object_path = g_strdup (object_path);
 
-	g_debug ("new ofono device: %p for %s", device, priv->object_path);
+	g_debug ("new ofono device: %p for %s", device, object_path);
 
-        if (!urf_device_register_device (URF_DEVICE (device), interface_vtable, introspection_xml)) {
+	if (!urf_device_register_device (URF_DEVICE (device), interface_vtable, introspection_xml)) {
                 g_object_unref (device);
                 return NULL;
         }
+
+	priv->modem_path = g_strdup (object_path);
 
 	g_dbus_proxy_new_for_bus (G_BUS_TYPE_SYSTEM,
 	                          G_DBUS_PROXY_FLAGS_NONE,
 	                          NULL,
 	                          "org.ofono",
-	                          priv->object_path,
+				  object_path,
 	                          "org.ofono.Modem",
 	                          priv->cancellable,
 	                          proxy_ready_cb,
