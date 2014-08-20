@@ -35,6 +35,7 @@
 
 #include "urf-device-hybris.h"
 
+#include "urf-daemon.h"
 #include "urf-utils.h"
 
 #define URF_DEVICE_HYBRIS_INTERFACE "org.freedesktop.URfkill.Device.Hybris"
@@ -122,8 +123,8 @@ static inline int is_soft_blocked()
 /**
  * set_soft:
  **/
-static gboolean
-set_soft (UrfDevice *device, gboolean blocked)
+static void
+set_soft (UrfDevice *device, gboolean blocked, GTask *task)
 {
 	UrfDeviceHybris *hybris = URF_DEVICE_HYBRIS (device);
 	UrfDeviceHybrisPrivate *priv = URF_DEVICE_HYBRIS_GET_PRIVATE (hybris);
@@ -140,12 +141,21 @@ set_soft (UrfDevice *device, gboolean blocked)
 	if (prev_blocked != priv->soft)
 		g_signal_emit_by_name(G_OBJECT (device), "state-changed", 0);
 
-	if (res < 0)
+	if (res < 0) {
 		g_warning ("Error setting mtk_wifi soft to %d", blocked);
-	else
+
+		if (task)
+			g_task_return_new_error(task,
+						URF_DAEMON_ERROR,
+						URF_DAEMON_ERROR_GENERAL,
+						"set_soft failed hybris Wi-Fi");
+	} else {
 		g_message ("mtk_wifi soft blocked set to %d", blocked);
 
-	return res < 0 ? FALSE : TRUE;
+		if (task)
+			g_task_return_pointer (task, NULL, NULL);
+
+	}
 }
 
 /**

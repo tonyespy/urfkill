@@ -39,8 +39,8 @@
 #define RFKILL_EVENT_SIZE_V1    8
 #endif
 
+#include "urf-daemon.h"
 #include "urf-device-kernel.h"
-
 #include "urf-utils.h"
 
 #define URF_DEVICE_KERNEL_INTERFACE "org.freedesktop.URfkill.Device.Kernel"
@@ -131,7 +131,9 @@ urf_device_kernel_update_states (UrfDevice *device,
 
 		g_debug("Emitting state-changed on device %s", priv->name);
 		g_signal_emit_by_name(G_OBJECT (device), "state-changed", 0);
+
 		emit_properites_changed (URF_DEVICE_KERNEL (device));
+
 		g_dbus_connection_emit_signal (urf_device_get_connection (device),
 		                               NULL,
 					       urf_device_get_object_path (device),
@@ -208,8 +210,8 @@ get_hard (UrfDevice *device)
 /**
  * set_soft:
  **/
-static gboolean
-set_soft (UrfDevice *device, gboolean blocked)
+static void
+set_soft (UrfDevice *device, gboolean blocked, GTask *task)
 {
 	UrfDeviceKernel *self = URF_DEVICE_KERNEL (device);
 	UrfDeviceKernelPrivate *priv = URF_DEVICE_KERNEL_GET_PRIVATE (self);
@@ -221,7 +223,8 @@ set_soft (UrfDevice *device, gboolean blocked)
 	event.type = priv->type;
 	event.soft = blocked;
 
-	g_message ("Setting %s to %s",
+	g_message ("%s: Setting %s to %s",
+		   __func__,
 	           type_to_string (priv->type),
 	           blocked ? "blocked" : "unblocked");
 
@@ -229,10 +232,16 @@ set_soft (UrfDevice *device, gboolean blocked)
 	if (len < 0) {
 		g_warning ("Failed to change RFKILL state: %s",
 			   g_strerror (errno));
-		return FALSE;
-	}
 
-	return TRUE;
+		if (task)
+			g_task_return_new_error(task,
+						URF_DAEMON_ERROR, 0,
+						"set_soft failed: %s",
+						type_to_string (priv->type));
+	} else {
+		if (task)
+			g_task_return_pointer (task, NULL, NULL);
+	}
 }
 
 /**
