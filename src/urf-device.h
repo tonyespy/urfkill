@@ -84,6 +84,7 @@ gboolean		 urf_device_update_states	(UrfDevice	*device,
 							 const gboolean	 soft,
 							 const gboolean	 hard);
 
+GDBusConnection		*urf_device_get_connection	(UrfDevice	*device);
 gint			 urf_device_get_index		(UrfDevice	*device);
 const char		*urf_device_get_object_path	(UrfDevice	*device);
 gint			 urf_device_get_device_type	(UrfDevice	*device);
