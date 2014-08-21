@@ -259,6 +259,8 @@ block_cb (GObject *source,
 
 		g_dbus_method_invocation_return_value (priv->invocation,
 						       g_variant_new ("(b)", TRUE));
+
+		urf_config_set_persist_state (priv->config, type, priv->pending_block);
 	} else {
 		g_warning ("%s: failed to set type %s to block %s", __func__,
 			   type_to_string (type),
@@ -288,6 +290,9 @@ urf_daemon_block (UrfDaemon             *daemon,
 	PolkitSubject *subject = NULL;
 	KillswitchState state;
 	GTask *task;
+	gint error = 0;
+	char *error_str;
+	gboolean done = FALSE;
 
 	g_return_val_if_fail (type >= 0, FALSE);
 
@@ -304,21 +309,19 @@ urf_daemon_block (UrfDaemon             *daemon,
 	if (type < 0 || type >= NUM_RFKILL_TYPES) {
 		g_warning ("%s: invalid type specified %d", __func__, type);
 
-		g_dbus_method_invocation_return_error (invocation,
-						       URF_DAEMON_ERROR,
-						       URF_DAEMON_ERROR_INVALID,
-						       "invalid type: %d", type);
-		return;
+		error = URF_DAEMON_ERROR_INVALID;
+		error_str = g_strdup_printf ("invalid type: %d", type);
+
+		goto out;
 	}
 
 	if (priv->invocation != NULL) {
-		g_warning ("%s: operation already inprogress...", __func__);
+		g_debug ("%s: operation already inprogress...", __func__);
 
-		g_dbus_method_invocation_return_error (invocation,
-						       URF_DAEMON_ERROR,
-						       URF_DAEMON_ERROR_IN_PROGRESS,
-						       "operation already in progress");
-		return;
+		error = URF_DAEMON_ERROR_IN_PROGRESS;
+		error_str = g_strdup ("operation already in progress");
+
+		goto out;
 	}
 
 	state = urf_arbitrator_get_state (priv->arbitrator, type);
@@ -327,9 +330,9 @@ urf_daemon_block (UrfDaemon             *daemon,
 	    (!block && state == KILLSWITCH_STATE_UNBLOCKED)) {
 		g_debug ("%s: block == current state", __func__);
 
-		g_dbus_method_invocation_return_value (priv->invocation,
-						       g_variant_new ("(b)", TRUE));
-		return;
+		done = TRUE;
+
+		goto out;
 	}
 
 	priv->pending_block = block;
@@ -344,6 +347,18 @@ out:
 	if (subject != NULL)
 		g_object_unref (subject);
 
+	if (error) {
+		g_dbus_method_invocation_return_error (invocation,
+						       URF_DAEMON_ERROR,
+						       error,
+						       "%s", error_str);
+		g_free (error_str);
+
+	} else if (done) {
+
+		g_dbus_method_invocation_return_value (priv->invocation,
+						       g_variant_new ("(b)", TRUE));
+	}
 }
 
 /**
@@ -359,6 +374,7 @@ block_idx_cb (GObject *source,
 	UrfDevice        *device;
 	GError           *error = NULL;
 	gint              index;
+	gint              type;
 
 	g_assert (URF_IS_DAEMON (source));
 	daemon = URF_DAEMON(source);
@@ -377,16 +393,20 @@ block_idx_cb (GObject *source,
 	g_task_propagate_pointer(G_TASK (res), &error);
 	g_object_unref (G_TASK (res));
 
+	type = urf_device_get_device_type (device);
+
 	if (error == NULL) {
 		g_debug ("%s: success", __func__);
 
 		g_dbus_method_invocation_return_value (priv->invocation,
 						       g_variant_new ("(b)", TRUE));
+
+		urf_config_set_persist_state (priv->config, type, priv->pending_block);
 	} else {
 		g_warning ("%s: failed device %u (%s) to %s",
 			   __func__,
                            index,
-                           type_to_string (urf_device_get_device_type (device)),
+                           type_to_string (type),
                            priv->pending_block ? "blocked" : "unblocked");
 
 		g_dbus_method_invocation_return_error (priv->invocation,
@@ -413,7 +433,9 @@ urf_daemon_block_idx (UrfDaemon             *daemon,
 	PolkitSubject *subject = NULL;
 	KillswitchState state;
 	GTask *task;
-	gboolean ret = FALSE;
+	gint error = 0;
+	char *error_str;
+	gboolean done = FALSE;
 
 	if (!urf_arbitrator_has_devices (priv->arbitrator))
 		goto out;
@@ -428,21 +450,19 @@ urf_daemon_block_idx (UrfDaemon             *daemon,
 	if (index < 0 || !urf_arbitrator_get_device (priv->arbitrator, index)) {
 		g_warning ("%s: invalid index specified %d", __func__, index);
 
-		g_dbus_method_invocation_return_error (invocation,
-						       URF_DAEMON_ERROR,
-						       URF_DAEMON_ERROR_INVALID,
-						       "invalid index: %d", index);
-		return;
+		error = URF_DAEMON_ERROR_INVALID;
+		error_str = g_strdup_printf ("invalid index: %d", index);
+
+		goto out;
 	}
 
 	if (priv->invocation != NULL) {
-		g_warning ("%s: operation already inprogress...", __func__);
+		g_debug ("%s: operation already inprogress...", __func__);
 
-		g_dbus_method_invocation_return_error (invocation,
-						       URF_DAEMON_ERROR,
-						       URF_DAEMON_ERROR_IN_PROGRESS,
-						       "operation already in progress");
-		return;
+		error = URF_DAEMON_ERROR_IN_PROGRESS;
+		error_str = g_strdup ("operation already in progress");
+
+		goto out;
 	}
 
 	state = urf_arbitrator_get_state_idx (priv->arbitrator, index);
@@ -451,9 +471,9 @@ urf_daemon_block_idx (UrfDaemon             *daemon,
 	    (!block && state == KILLSWITCH_STATE_UNBLOCKED)) {
 		g_debug ("%s: block == current state", __func__);
 
-		g_dbus_method_invocation_return_value (priv->invocation,
-						       g_variant_new ("(b)", TRUE));
-		return;
+		done = TRUE;
+
+		goto out;
 	}
 
 	task = g_task_new (daemon, NULL, block_idx_cb, NULL);
@@ -461,11 +481,23 @@ urf_daemon_block_idx (UrfDaemon             *daemon,
 
 	urf_arbitrator_set_block_idx (priv->arbitrator, index, block, task);
 
-	g_dbus_method_invocation_return_value (invocation,
-	                                       g_variant_new ("(b)", ret));
 out:
 	if (subject != NULL)
 		g_object_unref (subject);
+
+	if (error) {
+		g_dbus_method_invocation_return_error (invocation,
+						       URF_DAEMON_ERROR,
+						       error,
+						       "%s", error_str);
+		g_free (error_str);
+
+	} else if (done) {
+
+		g_dbus_method_invocation_return_value (priv->invocation,
+						       g_variant_new ("(b)", TRUE));
+	}
+
 }
 
 /**
@@ -590,6 +622,8 @@ urf_daemon_flight_mode (UrfDaemon             *daemon,
 	UrfDaemonPrivate *priv = daemon->priv;
 	PolkitSubject *subject = NULL;
 	GTask *task;
+	gint error = 0;
+	gboolean done = FALSE;
 
 	g_debug ("%s: block: %u", __func__, block);
 
@@ -604,21 +638,19 @@ urf_daemon_flight_mode (UrfDaemon             *daemon,
 		goto out;
 
 	if (priv->invocation != NULL) {
-		g_warning ("%s: operation already inprogress...", __func__);
+		g_debug ("%s: operation already inprogress...", __func__);
 
-		g_dbus_method_invocation_return_error (invocation,
-						       URF_DAEMON_ERROR,
-						       URF_DAEMON_ERROR_IN_PROGRESS,
-						       "operation already in progress");
-		return;
+		error = URF_DAEMON_ERROR_IN_PROGRESS;
+
+		goto out;
 	}
 
 	if (priv->flight_mode == block) {
 		g_debug ("%s: flight_mode == block", __func__);
 
-		g_dbus_method_invocation_return_value (invocation,
-						       g_variant_new ("(b)", TRUE));
-		return;
+		done = TRUE;
+
+		goto out;
 	}
 
 	priv->pending_block = block;
@@ -632,6 +664,15 @@ out:
 	if (subject != NULL)
 		g_object_unref (subject);
 
+	if (error) {
+		g_dbus_method_invocation_return_error (invocation,
+						       URF_DAEMON_ERROR,
+						       error,
+						       "operation already in progress");
+	} else if (done) {
+		g_dbus_method_invocation_return_value (invocation,
+						       g_variant_new ("(b)", TRUE));
+	}
 }
 
 /**
