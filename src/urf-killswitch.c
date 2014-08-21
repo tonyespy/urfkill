@@ -52,7 +52,6 @@ struct UrfKillswitchPrivate
 {
 	GList		 *devices;
 	enum rfkill_type  type;
-	KillswitchState   saved_state;
 	KillswitchState   state;
 	char		 *object_path;
 	GDBusConnection	 *connection;
@@ -127,7 +126,6 @@ urf_killswitch_state_refresh (UrfKillswitch *killswitch)
 
 	if (priv->devices == NULL) {
 		priv->state = KILLSWITCH_STATE_NO_ADAPTER;
-		priv->saved_state = KILLSWITCH_STATE_NO_ADAPTER;
 		return;
 	}
 
@@ -156,8 +154,8 @@ urf_killswitch_state_refresh (UrfKillswitch *killswitch)
 
 	g_debug ("killswitch %s state: %s new_state: %s",
 		type_to_string (priv->type),
-		state_to_string(priv->state),
-		state_to_string(new_state));
+		state_to_string (priv->state),
+		state_to_string (new_state));
 
 	/* emit a signal for change */
 	if (priv->state != new_state) {
@@ -184,20 +182,6 @@ urf_killswitch_get_state (UrfKillswitch *killswitch)
 {
 	urf_killswitch_state_refresh (killswitch);
 	return killswitch->priv->state;
-}
-
-KillswitchState
-urf_killswitch_get_saved_state (UrfKillswitch *killswitch)
-
-{
-	return killswitch->priv->saved_state;
-}
-
-void
-urf_killswitch_set_saved_state (UrfKillswitch *killswitch,
-				KillswitchState state)
-{
-	killswitch->priv->saved_state = state;
 }
 
 static void
@@ -458,7 +442,6 @@ urf_killswitch_init (UrfKillswitch *killswitch)
 	killswitch->priv->devices = NULL;
 	killswitch->priv->object_path = NULL;
 	killswitch->priv->state = KILLSWITCH_STATE_NO_ADAPTER;
-	killswitch->priv->saved_state = KILLSWITCH_STATE_NO_ADAPTER;
 }
 
 static GVariant *
