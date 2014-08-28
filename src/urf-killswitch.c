@@ -1,6 +1,7 @@
 /* -*- Mode: C; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*-
  *
  * Copyright (C) 2011 Gary Ching-Pang Lin <glin@suse.com>
+ * Copyright (C) 2014 Canonical Ltd.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -51,11 +52,13 @@ struct UrfKillswitchPrivate
 {
 	GList		 *devices;
 	enum rfkill_type  type;
-	KillswitchState   saved_state;
 	KillswitchState   state;
 	char		 *object_path;
 	GDBusConnection	 *connection;
 	GDBusNodeInfo	 *introspection_data;
+	GTask            *set_block_task;
+	GTask            *pending_device_task;
+	gboolean          pending_block;
 };
 
 G_DEFINE_TYPE (UrfKillswitch, urf_killswitch, G_TYPE_OBJECT)
@@ -123,7 +126,6 @@ urf_killswitch_state_refresh (UrfKillswitch *killswitch)
 
 	if (priv->devices == NULL) {
 		priv->state = KILLSWITCH_STATE_NO_ADAPTER;
-		priv->saved_state = KILLSWITCH_STATE_NO_ADAPTER;
 		return;
 	}
 
@@ -150,8 +152,11 @@ urf_killswitch_state_refresh (UrfKillswitch *killswitch)
 	if (platform_checked)
 		new_state = aggregate_states (platform, new_state);
 
-	g_message("killswitch state: %s new_state: %s",
-		  state_to_string(priv->state), state_to_string(new_state));
+	g_debug ("killswitch %s state: %s new_state: %s",
+		type_to_string (priv->type),
+		state_to_string (priv->state),
+		state_to_string (new_state));
+
 	/* emit a signal for change */
 	if (priv->state != new_state) {
 		priv->state = new_state;
@@ -177,20 +182,6 @@ urf_killswitch_get_state (UrfKillswitch *killswitch)
 {
 	urf_killswitch_state_refresh (killswitch);
 	return killswitch->priv->state;
-}
-
-KillswitchState
-urf_killswitch_get_saved_state (UrfKillswitch *killswitch)
-
-{
-	return killswitch->priv->saved_state;
-}
-
-void
-urf_killswitch_set_saved_state (UrfKillswitch *killswitch,
-				KillswitchState state)
-{
-	killswitch->priv->saved_state = state;
 }
 
 static void
@@ -242,28 +233,116 @@ urf_killswitch_del_device (UrfKillswitch *killswitch,
 }
 
 /**
+ * urf_killswitch_soft_block_cb:
+ **/
+static void
+urf_killswitch_soft_block_cb (GObject *source,
+			      GAsyncResult *res,
+			      gpointer user_data)
+{
+	UrfKillswitch  *killswitch;
+	UrfKillswitchPrivate *priv;
+	GError            *error = NULL;
+	GList *dev = user_data;
+
+	g_assert (URF_IS_KILLSWITCH (source));
+	killswitch = URF_KILLSWITCH (source);
+
+	priv = killswitch->priv;
+
+	g_assert (URF_IS_DEVICE(dev->data));
+
+	g_assert (g_task_is_valid(res, source));
+	g_assert (G_TASK(res) == G_TASK(priv->pending_device_task));
+	priv->pending_device_task = NULL;
+
+	g_task_propagate_pointer(G_TASK (res), &error);
+	g_object_unref (G_TASK (res));
+
+	if (error != NULL) {
+		g_warning ("%s *error != NULL (Failed)", __func__);
+
+		if (priv->set_block_task) {
+			g_debug ("%s: returning new error: %s", __func__, error->message);
+
+			g_task_return_new_error(priv->set_block_task,
+						error->domain, error->code,
+						"set_block failed: %s",
+						urf_device_get_object_path (URF_DEVICE (dev->data)));
+
+			priv->set_block_task = NULL;
+		}
+
+		g_error_free (error);
+		error = NULL;
+
+	} else if (dev->next == NULL) {
+		g_message ("%s: all done", __func__);
+
+		if (priv->set_block_task) {
+			g_debug ("%s: firing set_block_task OK", __func__);
+
+			g_task_return_pointer (priv->set_block_task, NULL, NULL);
+			priv->set_block_task = NULL;
+		}
+	} else {
+		dev = dev->next;
+
+		g_message ("%s: Setting device %s to %s",
+			 __func__,
+			 urf_device_get_object_path (URF_DEVICE (dev->data)),
+			 priv->pending_block ? "blocked" : "unblocked");
+
+		priv->pending_device_task = g_task_new(killswitch,
+						       NULL,
+						       urf_killswitch_soft_block_cb,
+						       dev);
+
+		urf_device_set_software_blocked (URF_DEVICE (dev->data), priv->pending_block,
+						 priv->pending_device_task);
+	}
+}
+
+/**
  * urf_killswitch_set_software_blocked:
  **/
-gboolean
+void
 urf_killswitch_set_software_blocked (UrfKillswitch *killswitch,
-                                     gboolean blocked)
+                                     gboolean block,
+				     GTask *task)
 {
 	UrfKillswitchPrivate *priv = killswitch->priv;
-	GList *dev;
-	gboolean result, ret = TRUE;
+	GList *dev = priv->devices;
 
-	for (dev = priv->devices; dev; dev = dev->next) {
+	/*
+	 * As each device_set_software_blocked () operation is asynchronous,
+	 * The sequence is started with the first device, and handle any
+	 * subsequent devices in the callback.
+	 */
+
+	if (dev) {
+		priv->set_block_task = task;
+		priv->pending_block = block;
+
 		g_debug ("Setting device %s to %s",
-		         urf_device_get_object_path (URF_DEVICE (dev->data)),
-		         blocked ? "blocked" : "unblocked");
+			 urf_device_get_object_path (URF_DEVICE (dev->data)),
+			 block ? "block" : "unblock");
 
-		result = urf_device_set_software_blocked (URF_DEVICE (dev->data), blocked);
+		priv->pending_device_task = g_task_new(killswitch,
+						       NULL,
+						       urf_killswitch_soft_block_cb,
+						       dev);
 
-		if (!result)
-			ret = FALSE;
+		urf_device_set_software_blocked (URF_DEVICE (dev->data), block,
+						 priv->pending_device_task);
+	} else {
+		g_debug ("%s: no devices for %s", __func__, type_to_string (priv->type));
+
+		if (task) {
+			g_message ("%s: calling task_return_pointer (no error)", __func__);
+			g_task_return_pointer (task, NULL, NULL);
+		}
 	}
-
-	return ret;
 }
 
 /**
@@ -363,7 +442,6 @@ urf_killswitch_init (UrfKillswitch *killswitch)
 	killswitch->priv->devices = NULL;
 	killswitch->priv->object_path = NULL;
 	killswitch->priv->state = KILLSWITCH_STATE_NO_ADAPTER;
-	killswitch->priv->saved_state = KILLSWITCH_STATE_NO_ADAPTER;
 }
 
 static GVariant *
@@ -393,7 +471,7 @@ static const GDBusInterfaceVTable interface_vtable =
 };
 
 /**
- * urf_device_register_device:
+ * urf_device_register_switch:
  **/
 static gboolean
 urf_killswitch_register_switch (UrfKillswitch *killswitch)

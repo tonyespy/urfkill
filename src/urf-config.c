@@ -770,18 +770,41 @@ urf_config_get_persist_state (UrfConfig *config,
 
 	g_return_val_if_fail (type >= 0, FALSE);
 
-	state = g_key_file_get_boolean (priv->persistence_file, type_to_string(type), "soft", &error);
+	state = g_key_file_get_boolean (priv->persistence_file, type_to_string (type), "soft", &error);
 
 	if (error) {
 			/* Debug only; there can be devices disappearing when some killswitches
 			 * are triggered.
 			 */
-			g_debug ("Could not get state for device %s: %s", type_to_string(type), error->message);
+			g_debug ("Could not get state for device %s: %s", type_to_string (type), error->message);
 			g_error_free (error);
 	}
 
-	g_debug ("saved state for device %s: %s", type_to_string(type), state ? "blocked" : "unblocked");
+	g_debug ("saved state for device %s: %s", type_to_string (type), state ? "blocked" : "unblocked");
 
+	return state;
+}
+
+gboolean
+urf_config_get_prev_soft (UrfConfig *config,
+			  const gint type)
+{
+	UrfConfigPrivate *priv = URF_CONFIG_GET_PRIVATE (config);
+	gboolean state = FALSE;
+	GError *error = NULL;
+
+	g_return_val_if_fail (type >= 0, FALSE);
+	state = g_key_file_get_boolean (priv->persistence_file, type_to_string (type), "prev-soft", &error);
+
+	if (error) {
+		/* Debug only; there can be devices disappearing when some killswitches
+		 * are triggered.
+		 */
+		g_debug ("Could not get state for device %s: %s", type_to_string (type), error->message);
+		g_error_free (error);
+	}
+
+	g_debug ("saved state for device %s: %s", type_to_string (type), state ? "blocked" : "unblocked");
 	return state;
 }
 
@@ -824,10 +847,25 @@ urf_config_set_persist_state (UrfConfig *config,
 
 	g_return_if_fail (type >= 0);
 
-	g_debug ("setting state for device %s: %s", type_to_string(type), state > 0 ? "blocked" : "unblocked");
+	g_debug ("setting state for device %s: %s", type_to_string (type), state > 0 ? "blocked" : "unblocked");
 
 	g_key_file_set_boolean (priv->persistence_file, type_to_string (type), "soft", state > 0);
 
+	urf_config_save_persistence_file (config);
+}
+
+void
+urf_config_set_prev_soft (UrfConfig *config,
+			  const gint type,
+			  gboolean block)
+{
+	UrfConfigPrivate *priv = URF_CONFIG_GET_PRIVATE (config);
+
+	g_return_if_fail (type >= 0);
+
+	g_debug ("setting state for device %s: %s", type_to_string (type), block ? "blocked" : "unblocked");
+
+	g_key_file_set_boolean (priv->persistence_file, type_to_string (type), "prev-soft", block);
 	urf_config_save_persistence_file (config);
 }
 

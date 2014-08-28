@@ -60,11 +60,9 @@ void			 urf_killswitch_add_device		(UrfKillswitch		*killswitch,
 void			 urf_killswitch_del_device		(UrfKillswitch		*killswitch,
 								 UrfDevice		*device);
 KillswitchState		 urf_killswitch_get_state		(UrfKillswitch		*killswitch);
-KillswitchState		 urf_killswitch_get_saved_state		(UrfKillswitch		*killswitch);
-void			 urf_killswitch_set_saved_state		(UrfKillswitch		*killswitch,
-								 KillswitchState         state);
-gboolean		 urf_killswitch_set_software_blocked	(UrfKillswitch		*killswitch,
-								 gboolean		 blocked);
+void      		 urf_killswitch_set_software_blocked	(UrfKillswitch		*killswitch,
+								 gboolean		 block,
+								 GTask                  *task);
 
 G_END_DECLS
 

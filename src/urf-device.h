@@ -68,8 +68,9 @@ typedef struct {
 	gboolean		 (*set_hardware_blocked)	(UrfDevice	*device,
 								 gboolean blocked);
 	gboolean		 (*is_hardware_blocked)		(UrfDevice	*device);
-	gboolean		 (*set_software_blocked)	(UrfDevice	*device,
-								 gboolean blocked);
+	void    		 (*set_software_blocked)	(UrfDevice	*device,
+								 gboolean blocked,
+								 GTask *task);
 	gboolean		 (*is_software_blocked)		(UrfDevice	*device);
 } UrfDeviceClass;
 
@@ -84,6 +85,7 @@ gboolean		 urf_device_update_states	(UrfDevice	*device,
 							 const gboolean	 soft,
 							 const gboolean	 hard);
 
+GDBusConnection		*urf_device_get_connection	(UrfDevice	*device);
 gint			 urf_device_get_index		(UrfDevice	*device);
 const char		*urf_device_get_object_path	(UrfDevice	*device);
 gint			 urf_device_get_device_type	(UrfDevice	*device);
@@ -91,8 +93,9 @@ const char		*urf_device_get_name		(UrfDevice	*device);
 KillswitchState		 urf_device_get_state		(UrfDevice	*device);
 gboolean		 urf_device_is_platform		(UrfDevice	*device);
 gboolean		 urf_device_is_hardware_blocked	(UrfDevice	*device);
-gboolean		 urf_device_set_software_blocked (UrfDevice	*device,
-                                                          gboolean block);
+void		         urf_device_set_software_blocked (UrfDevice	*device,
+                                                          gboolean block,
+							  GTask *task);
 gboolean		 urf_device_is_software_blocked	(UrfDevice	*device);
 
 gboolean		 urf_device_register_device	(UrfDevice			*device,

@@ -1,6 +1,6 @@
 /* -*- Mode: C; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*-
  *
- * Copyright (C) 2014 Canonical
+ * Copyright (C) 2014 Canonical Ltd.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -35,6 +35,7 @@
 
 #include "urf-device-hybris.h"
 
+#include "urf-daemon.h"
 #include "urf-utils.h"
 
 #define URF_DEVICE_HYBRIS_INTERFACE "org.freedesktop.URfkill.Device.Hybris"
@@ -52,7 +53,7 @@ enum
 	PROP_LAST
 };
 
-static const int hybris_wlan_index = 200;
+#define HYBRIS_INDEX 200
 
 #define URF_DEVICE_HYBRIS_GET_PRIVATE(obj) (G_TYPE_INSTANCE_GET_PRIVATE((obj), \
 				URF_TYPE_DEVICE_HYBRIS, UrfDeviceHybrisPrivate))
@@ -99,7 +100,7 @@ get_urf_type (UrfDevice *device)
 static const char *
 get_name (UrfDevice *device)
 {
-	return "mtk_wifi";
+	return "hybris_wifi";
 }
 
 /**
@@ -122,8 +123,8 @@ static inline int is_soft_blocked()
 /**
  * set_soft:
  **/
-static gboolean
-set_soft (UrfDevice *device, gboolean blocked)
+static void
+set_soft (UrfDevice *device, gboolean blocked, GTask *task)
 {
 	UrfDeviceHybris *hybris = URF_DEVICE_HYBRIS (device);
 	UrfDeviceHybrisPrivate *priv = URF_DEVICE_HYBRIS_GET_PRIVATE (hybris);
@@ -140,12 +141,21 @@ set_soft (UrfDevice *device, gboolean blocked)
 	if (prev_blocked != priv->soft)
 		g_signal_emit_by_name(G_OBJECT (device), "state-changed", 0);
 
-	if (res < 0)
-		g_warning ("Error setting mtk_wifi soft to %d", blocked);
-	else
-		g_message ("mtk_wifi soft blocked set to %d", blocked);
+	if (res < 0) {
+		g_warning ("Error setting hybris_wifi soft to %d", blocked);
 
-	return res < 0 ? FALSE : TRUE;
+		if (task)
+			g_task_return_new_error(task,
+						URF_DAEMON_ERROR,
+						URF_DAEMON_ERROR_GENERAL,
+						"set_soft failed hybris Wi-Fi");
+	} else {
+		g_message ("hybris_wifi soft blocked set to %d", blocked);
+
+		if (task)
+			g_task_return_pointer (task, NULL, NULL);
+
+	}
 }
 
 /**
@@ -316,11 +326,12 @@ urf_device_hybris_new (void)
 	UrfDeviceHybris *device = g_object_new (URF_TYPE_DEVICE_HYBRIS, NULL);
 	UrfDeviceHybrisPrivate *priv = URF_DEVICE_HYBRIS_GET_PRIVATE (device);
 
-	priv->index = hybris_wlan_index;
+	priv->index = HYBRIS_INDEX;
 
 	g_debug ("new hybris device: %p for index %d", device, priv->index);
 
-	if (!urf_device_register_device (URF_DEVICE (device), interface_vtable,
+	if (!urf_device_register_device (URF_DEVICE (device),
+					 interface_vtable,
 					 introspection_xml)) {
 		g_object_unref (device);
 		return NULL;
