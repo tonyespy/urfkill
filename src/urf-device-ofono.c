@@ -188,7 +188,7 @@ set_online_cb (GObject *source_object,
 	UrfDeviceOfono *modem = URF_DEVICE_OFONO (user_data);
 	UrfDeviceOfonoPrivate *priv = URF_DEVICE_OFONO_GET_PRIVATE (modem);
 	GVariant *result;
-	GError *error;
+	GError *error = NULL;
 	gint code = 0;
 
 	result = g_dbus_proxy_call_finish (priv->proxy, res, &error);
