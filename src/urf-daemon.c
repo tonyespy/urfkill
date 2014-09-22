@@ -356,7 +356,7 @@ out:
 
 	} else if (done) {
 
-		g_dbus_method_invocation_return_value (priv->invocation,
+		g_dbus_method_invocation_return_value (invocation,
 						       g_variant_new ("(b)", TRUE));
 	}
 }
@@ -476,6 +476,9 @@ urf_daemon_block_idx (UrfDaemon             *daemon,
 		goto out;
 	}
 
+	priv->pending_block = block;
+	priv->invocation = invocation;
+
 	task = g_task_new (daemon, NULL, block_idx_cb, NULL);
 	g_task_set_task_data (task, GINT_TO_POINTER (index), NULL);
 
@@ -494,7 +497,7 @@ out:
 
 	} else if (done) {
 
-		g_dbus_method_invocation_return_value (priv->invocation,
+		g_dbus_method_invocation_return_value (invocation,
 						       g_variant_new ("(b)", TRUE));
 	}
 
