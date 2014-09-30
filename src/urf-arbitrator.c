@@ -55,6 +55,8 @@
 #define PROP_URFKILL_HYBRIS_WLAN    "urfkill.hybris.wlan"
 #define PROP_URFKILL_HYBRIS_WLAN_NO "0"
 
+#define HYBRIS_WLAN_START_TIMEOUT_MS 2000
+
 enum {
 	DEVICE_ADDED,
 	DEVICE_REMOVED,
@@ -719,6 +721,17 @@ event_cb (GIOChannel    *source,
 	return TRUE;
 }
 
+static gboolean create_hybris_device (gpointer data)
+{
+	UrfDevice *device;
+	UrfArbitrator *arbitrator = data;
+
+	device = urf_device_hybris_new ();
+	urf_arbitrator_add_device (arbitrator, device);
+
+	return FALSE;
+}
+
 /**
  * urf_arbitrator_startup
  **/
@@ -805,12 +818,9 @@ urf_arbitrator_startup (UrfArbitrator *arbitrator,
 		                                 arbitrator);
 	}
 
-	if (priv->hybris_wlan) {
-		UrfDevice *device;
-
-		device = urf_device_hybris_new ();
-		urf_arbitrator_add_device (arbitrator, device);
-	}
+	/* To avoid race issues in MTK sockets we wait two seconds before creating the hybris device */
+	if (priv->hybris_wlan)
+		g_timeout_add (HYBRIS_WLAN_START_TIMEOUT_MS, create_hybris_device, arbitrator);
 
 	/* Set initial flight mode state from persistence */
 	if (priv->persist) {
