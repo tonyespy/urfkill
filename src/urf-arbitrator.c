@@ -36,8 +36,6 @@
 
 #include <glib.h>
 
-#include <hybris/properties/properties.h>
-
 #ifndef RFKILL_EVENT_SIZE_V1
 #define RFKILL_EVENT_SIZE_V1    8
 #endif
@@ -50,12 +48,15 @@
 
 #include "urf-device.h"
 #include "urf-device-kernel.h"
+
+#ifdef HAS_HYBRIS
+#include <hybris/properties/properties.h>
 #include "urf-device-hybris.h"
 
 #define PROP_URFKILL_HYBRIS_WLAN    "urfkill.hybris.wlan"
 #define PROP_URFKILL_HYBRIS_WLAN_NO "0"
-
 #define HYBRIS_WLAN_START_TIMEOUT_MS 2000
+#endif
 
 enum {
 	DEVICE_ADDED,
@@ -87,8 +88,10 @@ struct UrfArbitratorPrivate {
 	GTask           *pending_block_task;
 	int              block_index;
 	gboolean         pending_block;
+#ifdef HAS_HYBRIS
 	/* WLAN devices are controlled via libhybris */
 	gboolean	hybris_wlan;
+#endif /* HAS_HYBRIS */
 };
 
 G_DEFINE_TYPE(UrfArbitrator, urf_arbitrator, G_TYPE_OBJECT)
@@ -668,12 +671,14 @@ print_event (struct rfkill_event *event)
 		 event->soft, event->hard);
 }
 
+#ifdef HAS_HYBRIS
 static inline gboolean is_hybris_type(UrfArbitrator *arbitrator, int type)
 {
 	UrfArbitratorPrivate *priv = arbitrator->priv;
 
 	return type == RFKILL_TYPE_WLAN && priv->hybris_wlan;
 }
+#endif /* HAS_HYBRIS */
 
 /**
  * event_cb:
@@ -698,7 +703,11 @@ event_cb (GIOChannel    *source,
 		while (status == G_IO_STATUS_NORMAL && read == sizeof(event)) {
 			print_event (&event);
 
+#ifdef HAS_HYBRIS
 			if (!is_hybris_type(arbitrator, event.type)) {
+#else
+			{
+#endif /* HAS_HYBRIS */
 				soft = (event.soft > 0)?TRUE:FALSE;
 				hard = (event.hard > 0)?TRUE:FALSE;
 
@@ -725,6 +734,7 @@ event_cb (GIOChannel    *source,
 	return TRUE;
 }
 
+#ifdef HAS_HYBRIS
 static gboolean create_hybris_device (gpointer data)
 {
 	UrfDevice *device;
@@ -735,6 +745,7 @@ static gboolean create_hybris_device (gpointer data)
 
 	return FALSE;
 }
+#endif /* HAS_HYBRIS */
 
 /**
  * urf_arbitrator_startup
@@ -747,12 +758,13 @@ urf_arbitrator_startup (UrfArbitrator *arbitrator,
 	struct rfkill_event event;
 	int fd;
 	int i;
-	char hybris_prop[PROP_VALUE_MAX];
 
 	priv->config = g_object_ref (config);
 	priv->force_sync = urf_config_get_force_sync (config);
 	priv->persist =	urf_config_get_persist (config);
 
+#ifdef HAS_HYBRIS
+	char hybris_prop[PROP_VALUE_MAX];
 	property_get (PROP_URFKILL_HYBRIS_WLAN, hybris_prop,
 			PROP_URFKILL_HYBRIS_WLAN_NO);
 
@@ -762,6 +774,7 @@ urf_arbitrator_startup (UrfArbitrator *arbitrator,
 		g_message ("Using hybris for WLAN devices");
 		priv->hybris_wlan = TRUE;
 	}
+#endif /* HAS_HYBRIS */
 
 	fd = open("/dev/rfkill", O_RDWR | O_NONBLOCK);
 	if (fd < 0) {
@@ -800,6 +813,7 @@ urf_arbitrator_startup (UrfArbitrator *arbitrator,
 				continue;
 			}
 
+#ifdef HAS_HYBRIS
 			/*
 			 * Although a proper RFKILL event may be generated
 			 * for a device,  skip if we've been instructed to
@@ -809,6 +823,7 @@ urf_arbitrator_startup (UrfArbitrator *arbitrator,
 
 			if (is_hybris_type(arbitrator, event.type))
 				continue;
+#endif /* HAS_HYBRIS */
 
 			add_killswitch (arbitrator, event.idx, event.type, event.soft, event.hard);
 		}
@@ -822,9 +837,18 @@ urf_arbitrator_startup (UrfArbitrator *arbitrator,
 		                                 arbitrator);
 	}
 
+#ifdef HAS_HYBRIS
+	if (priv->hybris_wlan) {
+		UrfDevice *device;
+
+		device = urf_device_hybris_new ();
+		urf_arbitrator_add_device (arbitrator, device);
+	}
+
 	/* To avoid race issues in MTK sockets we wait two seconds before creating the hybris device */
 	if (priv->hybris_wlan)
 		g_timeout_add (HYBRIS_WLAN_START_TIMEOUT_MS, create_hybris_device, arbitrator);
+#endif /* HAS_HYBRIS */
 
 	/* Set initial flight mode state from persistence */
 	if (priv->persist) {

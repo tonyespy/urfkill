@@ -145,8 +145,12 @@ AC_SUBST(WARNINGFLAGS_C)
 PKG_CHECK_MODULES(GLIB, [glib-2.0 >= 2.36])
 PKG_CHECK_MODULES(GIO, [gio-unix-2.0 >= 2.30.1])
 PKG_CHECK_MODULES(LIBUDEV, [libudev >= 148])
-PKG_CHECK_MODULES(HYBRIS_WIFI, [libwifi >= 0.1.0])
-PKG_CHECK_MODULES(HYBRIS_PROPS, [libandroid-properties >= 0.1.0])
+PKG_CHECK_MODULES(HYBRIS_WIFI, [libwifi >= 0.1.0], has_hybris_wifi=yes, has_hybris_wifi=no)
+PKG_CHECK_MODULES(HYBRIS_PROPS, [libandroid-properties >= 0.1.0], has_hybris_props=yes, has_hybris_props=no)
+if test x$has_hybris_wifi = xyes -a x$has_hybris_props = xyes; then
+	AC_DEFINE(HAS_HYBRIS, 1, [if we have Hybris support])
+fi
+AM_CONDITIONAL(WITH_HYBRIS, test "$has_hybris_wifi" = "yes" -a "$has_hybris_props" = "yes")
 
 # XML library
 AC_CHECK_LIB(expat, XML_ParserCreate,
