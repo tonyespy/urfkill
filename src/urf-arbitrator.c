@@ -542,6 +542,7 @@ update_killswitch (UrfArbitrator *arbitrator,
 	UrfDevice *device;
 	gboolean changed, old_hard = FALSE;
 	char *object_path;
+	gint type;
 
 	g_return_if_fail (index >= 0);
 
@@ -568,6 +569,9 @@ update_killswitch (UrfArbitrator *arbitrator,
 				urf_arbitrator_set_block_idx (arbitrator, index, TRUE, NULL);
 			else if (hard != old_hard && hard == FALSE)
 				urf_arbitrator_set_block_idx (arbitrator, index, FALSE, NULL);
+		} else {
+			type = urf_device_get_device_type (device);
+			urf_config_set_persist_state (priv->config, type, soft);
 		}
 	}
 }
