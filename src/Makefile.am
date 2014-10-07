@@ -32,8 +32,6 @@ urfkilld_SOURCES =						\
 	urf-device-kernel.c					\
 	urf-device-ofono.h					\
 	urf-device-ofono.c					\
-	urf-device-hybris.h					\
-	urf-device-hybris.c					\
 	urf-killswitch.h					\
 	urf-killswitch.c					\
 	urf-input.h						\
@@ -50,6 +48,13 @@ urfkilld_SOURCES =						\
 	urf-daemon.c						\
 	urf-main.c						\
 	$(NULL)
+
+if WITH_HYBRIS
+urfkilld_SOURCES += \
+	urf-device-hybris.h					\
+	urf-device-hybris.c					\
+	$(NULL)
+endif
 
 if SESSION_TRACKING_SYSTEMD
 urfkilld_SOURCES += \
