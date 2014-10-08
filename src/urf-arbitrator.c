@@ -838,13 +838,6 @@ urf_arbitrator_startup (UrfArbitrator *arbitrator,
 	}
 
 #ifdef HAS_HYBRIS
-	if (priv->hybris_wlan) {
-		UrfDevice *device;
-
-		device = urf_device_hybris_new ();
-		urf_arbitrator_add_device (arbitrator, device);
-	}
-
 	/* To avoid race issues in MTK sockets we wait two seconds before creating the hybris device */
 	if (priv->hybris_wlan)
 		g_timeout_add (HYBRIS_WLAN_START_TIMEOUT_MS, create_hybris_device, arbitrator);
