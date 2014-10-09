@@ -71,6 +71,8 @@ struct _UrfDevicePrivate {
 	char		*object_path;
 	GDBusConnection	*connection;
 	GDBusNodeInfo	*introspection_data;
+	guint            dev_iface_id;
+	guint            child_iface_id;
 };
 
 G_DEFINE_ABSTRACT_TYPE_WITH_PRIVATE (UrfDevice, urf_device, G_TYPE_OBJECT)
@@ -336,6 +338,14 @@ urf_device_dispose (GObject *object)
 	}
 
 	if (priv->connection) {
+		if (priv->child_iface_id > 0)
+			g_dbus_connection_unregister_object (priv->connection,
+							     priv->child_iface_id);
+		if (priv->dev_iface_id > 0)
+			g_dbus_connection_unregister_object (priv->connection,
+							     priv->dev_iface_id);
+		priv->child_iface_id = 0;
+		priv->dev_iface_id = 0;
 		g_object_unref (priv->connection);
 		priv->connection = NULL;
 	}
@@ -527,6 +537,8 @@ urf_device_register_device (UrfDevice *device, const GDBusInterfaceVTable vtable
 
 	g_assert (reg_id > 0);
 
+	priv->dev_iface_id = reg_id;
+
 	reg_id = g_dbus_connection_register_object (priv->connection,
 		                                    priv->object_path,
 		                                    infos[1],
@@ -538,6 +550,8 @@ urf_device_register_device (UrfDevice *device, const GDBusInterfaceVTable vtable
 		g_warning ("Error registering Device interface: %s", error->message);
 
 	g_assert (reg_id > 0);
+
+	priv->child_iface_id = reg_id;
 
 	return TRUE;
 }
