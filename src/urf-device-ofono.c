@@ -419,6 +419,11 @@ dispose (GObject *object)
 {
 	UrfDeviceOfonoPrivate *priv = URF_DEVICE_OFONO_GET_PRIVATE (object);
 
+	if (priv->proxy) {
+		g_object_unref (priv->proxy);
+		priv->proxy = NULL;
+	}
+
 	if (priv->modem_path) {
 		g_free (priv->modem_path);
 		priv->modem_path = NULL;
