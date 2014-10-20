@@ -162,6 +162,9 @@ ofono_get_modems_cb (GObject *source_object,
 	gchar *modem_path;
 	GError *error = NULL;
 
+	if (ofono->proxy == NULL)
+		return;
+
 	value = g_dbus_proxy_call_finish (ofono->proxy, res, &error);
 
 	if (!error) {
